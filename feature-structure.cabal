@@ -1,0 +1,35 @@
+name:               feature-structure
+version:            0.1.0
+synopsis:           Feature structures
+description:
+    TODO
+license:            BSD3
+license-file:       LICENSE
+cabal-version:      >= 1.6
+copyright:          Copyright (c) 2014 Jakub Waszczuk
+author:             Jakub Waszczuk
+maintainer:         waszczuk.kuba@gmail.com
+stability:          experimental
+category:           Natural Language Processing
+homepage:           https://github.com/kawu/feature-structure
+build-type:         Simple
+
+library
+    hs-source-dirs: src
+
+    build-depends:
+        base                    >= 4        && < 5
+      , mtl                     >= 2.1      && < 2.2
+      , containers              >= 0.4      && < 0.5
+      , data-partition          >= 0.2      && < 0.3
+
+    exposed-modules:
+        NLP.FeatureStructure.Graph
+
+--     other-modules:
+
+    ghc-options: -Wall -O2
+
+source-repository head
+    type: git
+    location: https://github.com/kawu/feature-structure.git
