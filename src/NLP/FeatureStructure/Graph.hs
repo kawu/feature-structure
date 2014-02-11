@@ -22,10 +22,14 @@ module NLP.FeatureStructure.Graph
 , test1
 , test2
 , test3
+, test4
+, test5
 ) where
 
 
+import           Control.Applicative (pure, (<$>), (<*>))
 import           Control.Monad (unless, forM_)
+import           Data.These
 
 import qualified Data.Map as M
 import qualified Data.IntMap as I
@@ -71,7 +75,7 @@ edgeMap k fg = case I.lookup k fg of
 
 
 --------------------------------------------------------------------
--- Equivalence relation
+-- Monad
 --------------------------------------------------------------------
 
 
@@ -91,15 +95,30 @@ equivalent x y = do
     return $ (P.rep par x) == (P.rep par y)
 
 
--- | Equivalence monad for unification.
+-- | Element representative.
+repr :: Ord a => a -> EqM a a
+repr x = P.rep <$> S.get <*> pure x
+
+
+-- | Unification monad.
 type UM b = EqM (Either NodeID NodeID) b
+
+
+--------------------------------------------------------------------
+-- Equivalence relation
+--------------------------------------------------------------------
+
+
+-- | A graph with a selected node.
+type NodeFG a b = (NodeID, FG a b)
 
 
 -- | Given two feature graphs and corresponding nodes, compute
 -- equivalence classes which would result from a unification
 -- of the two graphs.
-uniCls :: Ord a => (NodeID, FG a b) -> (NodeID, FG a b) -> UM ()
+uniCls :: Ord a => NodeFG a b -> NodeFG a b -> UM ()
 uniCls (k1, fg1) (k2, fg2) =
+    -- TODO: still seems to be a bit controversial, though...
     unlessM (equivalent p q) $ do
         join p q
         forM_ common $ uncurry uniCls
@@ -115,15 +134,40 @@ uniCls (k1, fg1) (k2, fg2) =
 
 
 --------------------------------------------------------------------
--- Misc
+-- Output graph
 --------------------------------------------------------------------
 
 
--- | A version of the `unless` function with a monadic argument.
-unlessM :: Monad m => m Bool -> m () -> m ()
-unlessM m n = do
-    b <- m
-    unless b n
+-- -- | Given the equivalence classes (stored in the state monad),
+-- -- construct the resultant graph.
+-- joinBoth :: Ord a => NodeFG a b -> NodeFG a b -> UM NodeID
+-- joinBoth (k1, fg1) (k2, fg2) = do
+--     k  <- addNode $ repr $ Left k1
+--     ks <- forM_ children $ \ths -> case ths of
+--         These x y   -> joinBoth (x, fg1) (y, fg2)
+--         This x      -> joinLeft (x, fg1)
+--         That y      -> joinRight         (y, fg2)
+--     addEdges k ks
+--     return k
+--   where
+--     children = interleave
+--         (M.toList $ edgeMap k1 fg1)
+--         (M.toList $ edgeMap k2 fg2)
+-- 
+-- 
+-- joinLeft :: Ord a => NodeFG a b -> UM NodeID
+-- joinLeft (k1, fg1) = do
+--     k  <- addNode $ repr $ Left k1
+--     ks <- forM_ children $ \ths -> case ths of
+--         These x y   -> joinBoth (x, fg1) (y, fg2)
+--         This x      -> joinLeft (x, fg1)
+--         That y      -> joinRight         (y, fg2)
+--     addEdges k ks
+--     return k
+--   where
+--     children = interleave
+--         (M.toList $ edgeMap k1 fg1)
+--         (M.toList $ edgeMap k2 fg2)
 
 
 --------------------------------------------------------------------
@@ -168,3 +212,61 @@ test3 = do
         [(1, Interior $ M.fromList [('a', 1)])]
     f2 = I.fromList
         [(1, Interior $ M.fromList [('a', 1)])]
+
+
+test4 :: IO ()
+test4 = do
+    mapM_ print $ P.nontrivialSets par
+  where
+    par = flip S.execState P.empty $ uniCls (1, f1) (1, f2)
+    f1 = I.fromList
+        [ (1, Interior $ M.fromList
+            [('a', 2), ('b', 2), ('c', 3)])
+        , (2, Frontier 'x')
+        , (3, Frontier 'y') ]
+    f2 = I.fromList
+        [ (1, Interior $ M.fromList
+            [('a', 2), ('b', 3), ('c', 3)])
+        , (2, Frontier 'x')
+        , (3, Frontier 'y') ]
+
+
+test5 :: IO ()
+test5 = do
+    mapM_ print $ P.nontrivialSets par
+  where
+    par = flip S.execState P.empty $ uniCls (1, f1) (1, f2)
+    f1 = I.fromList
+        [ (1, Interior $ M.fromList
+            [('a', 2), ('b', 2), ('c', 3)])
+        , (2, Frontier 'x')
+        , (3, Interior $ M.fromList [('a', 4)])
+        , (4, Frontier 'x') ]
+    f2 = I.fromList
+        [ (1, Interior $ M.fromList
+            [('a', 2), ('b', 3), ('c', 3)])
+        , (2, Interior $ M.fromList [('a', 4)])
+        , (3, Frontier 'x')
+        , (4, Frontier 'x') ]
+
+
+--------------------------------------------------------------------
+-- Misc
+--------------------------------------------------------------------
+
+
+-- | A version of the `unless` function with a monadic argument.
+unlessM :: Monad m => m Bool -> m () -> m ()
+unlessM m n = do
+    b <- m
+    unless b n
+
+
+-- | Interleave two lists given in an ascending order.
+interleave :: Ord a => [a] -> [a] -> [These a a]
+interleave xxs@(x:xs) yys@(y:ys)
+    | x < y     = This x    : interleave xs yys
+    | x > y     = That y    : interleave xxs ys
+    | otherwise = These x y : interleave xs ys
+interleave xs [] = map This xs
+interleave [] ys = map That ys
