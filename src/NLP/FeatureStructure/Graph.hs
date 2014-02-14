@@ -1,4 +1,6 @@
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE RecordWildCards #-}
+
 
 -- | A graph-based representation of a feature structure.
 --
@@ -28,12 +30,14 @@ module NLP.FeatureStructure.Graph
 
 import           Control.Applicative (Applicative(..), pure, (<$>), (<*>))
 import           Control.Monad (when)
-import           Data.These
+import           Control.Arrow (first)
+import qualified Control.Monad.State.Strict as S
+import qualified Control.Error as E
 
 import qualified Data.Map.Strict as M
--- import qualified Data.IntMap.Strict as I
--- import qualified Data.Partition as P
-import qualified Control.Monad.State.Strict as S
+import qualified Data.Sequence as Seq
+import           Data.Sequence (Seq, (<|), (|>), ViewL(..))
+import qualified Data.Partition as P
 
 
 -- | A feature graph with node identifiers of type `i`, edges labeled
@@ -69,8 +73,24 @@ edgeMap k fg = case M.lookup k fg of
 
 -- | Join two feature graphs.  Nodes from the first graph will be
 -- marked as `Left`s, nodes from the second one -- as `Right`s. 
-fromTwo :: FG i f a -> FG i f a -> FG (Either i i) f a
-fromTwo = undefined
+fromTwo :: Ord i => FG i f a -> FG i f a -> FG (Either i i) f a
+fromTwo f g = M.fromAscList $
+    (M.toAscList $ mapIDsMono Left f) ++
+    (M.toAscList $ mapIDsMono Right f)
+
+
+-- | Map keys of the feature graph using a strictly monotonic function.
+mapIDsMono :: Ord j => (i -> j) -> FG i f a -> FG j f a
+mapIDsMono f m = M.fromAscList
+    [ (f k, mapNodeIDs f v)
+    | (k, v) <- M.toAscList m ]
+
+
+-- | Map identifiers of the node using a strictly monotonic function.
+mapNodeIDs :: (i -> j) -> Node i f a -> Node j f a
+mapNodeIDs f (Interior m) = Interior $ M.map f m
+mapNodeIDs _ (Frontier x) = Frontier x
+{-# INLINE mapNodeIDs #-}
 
 
 --------------------------------------------------------------------
@@ -78,62 +98,84 @@ fromTwo = undefined
 --------------------------------------------------------------------
 
 
--- | Unification monad (dummy).  We assume, among others, that
--- there is a `MaybeT` in the monad stack, so that we can
--- easily represent "what's the name" (computation cut-off?)
--- in the algorithm.  But perhaps `MaybeT` is not needed at
--- every level?
--- Error should be representable as well, since unification
--- may fail. 
-data UM i f a b = UM
+-- | The state of the unification monad.
+data UMS i f a = UMS {
+    -- | A sequence of node pairs.
+      umSq  :: Seq (i, i)
+    -- | A feature graph.
+    , umFg  :: FG i f a
+    -- | A disjoint-set covering information about representants.
+    , umDs  :: P.Partition i }
 
 
--- | TODO: proper instances
-instance Functor (UM i f a)
-instance Applicative (UM i f a)
-instance Monad (UM i f a)
+-- | Error types for the unification monad.
+data Err
+    = Pass      -- ^ An equivalent of `Nothing`
+    | UniFail   -- ^ Non-recoverable failure of unification
+    | Other     -- ^ Not expected runtime error
 
 
--- | Pop the node pair from the queue.  TODO: By the way, it seems
--- that it is crucial for the algorithm that this is a queue, and
--- not a stack, for example.  It should be explicit!
+-- | The unification monad.
+type UM i f a b = E.EitherT Err (S.State (UMS i f a)) b
+
+
+-- | Pop the node pair from the queue.  TODO: By the way, does
+-- it have to be a queue for the algorithm to be correct?
 pop :: UM i f a (i, i)
-pop = undefined
+pop = do
+    pair <- S.state $ \ums@UMS{..} -> case Seq.viewl umSq of
+        EmptyL  -> (Nothing, ums)
+        x :< sq -> (Just x, ums {umSq = sq})
+    E.tryJust Pass pair
+
+
+-- | Push the node pair into the queue.
+push :: (i, i) -> UM i f a ()
+push x = S.modify $ \ums@UMS{..} -> ums {umSq = umSq |> x}
 
 
 -- | Return the representant of the given node.
-repr :: i -> UM i f a i
-repr = undefined
+-- TODO: It doesn't fail with the `Other`, perhaps we should change that?
+repr :: Ord i => i -> UM i f a i
+repr x = P.rep <$> S.gets umDs <*> pure x
 
 
--- | Cut-off (TODO: what's the proper name of that?) the computation.
+-- | Cut-off the computation.
 pass :: UM i f a b
-pass = undefined
+pass = E.left Pass
 
 
--- | Unification fail.
+-- | Unification failure.
 uniFail :: UM i f a b
-uniFail = undefined
+uniFail = E.left UniFail
 
 
 -- | Node behind the identifier.
-node :: i -> UM i f a (Node i f a)
-node = undefined
+node :: Ord i => i -> UM i f a (Node i f a)
+node x = do
+    fg <- S.gets umFg
+    E.tryJust Other $ M.lookup x fg
 
 
 -- | Set the representant of the node.
-mkReprOf :: i -> i -> UM i f a ()
-mkReprOf = undefined
+-- TODO: It is incorrect!  It just joins the two nodes,
+-- but we don't know which one will be the representant
+-- in the end!
+mkReprOf :: Ord i => i -> i -> UM i f a ()
+mkReprOf x y = S.modify $ \ums@UMS{..} ->
+    ums {umDs = P.join x y umDs}
 
 
 -- | Set node under the given identifier.
-setNode :: i -> Node i f a -> UM i f a ()
-setNode = undefined
+setNode :: Ord i => i -> Node i f a -> UM i f a ()
+setNode i x = S.modify $ \ums@UMS{..} ->
+    ums {umFg = M.insert i x umFg}
 
 
 -- | Remove node under the given identifier.
-remNode :: i -> UM i f a ()
-remNode = undefined
+remNode :: Ord i => i -> UM i f a ()
+remNode i = S.modify $ \ums@UMS{..} ->
+    ums {umFg = M.delete i umFg}
 
 
 --------------------------------------------------------------------
@@ -150,7 +192,7 @@ type NodeFG i f a = (i, FG i f a)
 
 
 -- | Unify two feature graphs.
-unify :: NodeFG i f a -> NodeFG i f a -> NodeFG (Either i i) f a
+unify :: (Ord i) => NodeFG i f a -> NodeFG i f a -> NodeFG (Either i i) f a
 unify (i0, f0) (j0, g0) =
     (i, g)  -- TODO: implement
   where
@@ -165,7 +207,7 @@ unify (i0, f0) (j0, g0) =
 -- are given.
 -- TODO: Perhaps we should supply the function with the
 -- node pair; it might be more elemegant in the end.
-mergeTop :: (Eq i, Eq a) => UM i f a ()
+mergeTop :: (Ord i, Eq a, Ord f) => UM i f a ()
 mergeTop = do
     -- Pop the node pair from the queue.
     (i, j) <- popRepr
@@ -179,19 +221,19 @@ mergeTop = do
 
 
 -- | Pop nodes from the queue and return their representants.
-popRepr :: UM i f a (i, i)
+popRepr :: Ord i => UM i f a (i, i)
 popRepr = do
     (i, j) <- pop
     (,) <$> repr i <*> repr j
 
 
 -- | Merge the two given nodes.
-mergeNodes :: Eq a => NodeID i f a -> NodeID i f a -> UM i f a ()
+mergeNodes :: (Ord i, Eq a, Ord f) => NodeID i f a -> NodeID i f a -> UM i f a ()
 mergeNodes (i, n) (j, m) =
     doit n m
   where
     doit (Interior p) (Interior q) = do
-        setNode i $ Interior $ mergeEdgeMaps p q
+        setNode i $ Interior $ M.union p q
         remNode j >> i `mkReprOf` j
     doit (Frontier _) (Interior q)
         | M.null q  = remNode j >> i `mkReprOf` j
@@ -204,13 +246,11 @@ mergeNodes (i, n) (j, m) =
         | otherwise = uniFail
 
 
--- | Compute the union of the two given edge maps.  In case
--- of overlapping, the node identifier from the first map
--- is chosen (but this behaviour is arbitrary and could be
--- easily changed without the impact on the correctness
--- of the algorithm).
-mergeEdgeMaps :: M.Map f i -> M.Map f i -> M.Map f i
-mergeEdgeMaps = undefined
+
+--------------------------------------------------------------------
+-- DEPRECATED SECTION BELOW
+--------------------------------------------------------------------
+
 
 
 -- --------------------------------------------------------------------
@@ -399,13 +439,13 @@ mergeEdgeMaps = undefined
 -- unlessM m n = do
 --     b <- m
 --     unless b n
-
-
--- | Interleave two lists given in an ascending order.
-interleave :: Ord a => [a] -> [a] -> [These a a]
-interleave xxs@(x:xs) yys@(y:ys)
-    | x < y     = This x    : interleave xs yys
-    | x > y     = That y    : interleave xxs ys
-    | otherwise = These x y : interleave xs ys
-interleave xs [] = map This xs
-interleave [] ys = map That ys
+-- 
+-- 
+-- -- | Interleave two lists given in an ascending order.
+-- interleave :: Ord a => [a] -> [a] -> [These a a]
+-- interleave xxs@(x:xs) yys@(y:ys)
+--     | x < y     = This x    : interleave xs yys
+--     | x > y     = That y    : interleave xxs ys
+--     | otherwise = These x y : interleave xs ys
+-- interleave xs [] = map This xs
+-- interleave [] ys = map That ys
