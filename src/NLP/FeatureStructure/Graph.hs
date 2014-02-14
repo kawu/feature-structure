@@ -28,6 +28,8 @@ module NLP.FeatureStructure.Graph
 , test4
 , test4v2
 , test5
+, test5v2
+, test6
 ) where
 
 
@@ -42,6 +44,8 @@ import qualified Data.Sequence as Seq
 import           Data.Sequence (Seq, (|>), ViewL(..))
 
 import qualified NLP.FeatureStructure.DisjSet as D
+
+import Debug.Trace (trace)
 
 
 -- | A feature graph with node identifiers of type `i`, edges labeled
@@ -61,7 +65,7 @@ data Node i f a
 
 
 --------------------------------------------------------------------
--- Joing two feature graphs
+-- Join two feature graphs
 --------------------------------------------------------------------
 
 
@@ -190,6 +194,7 @@ unify
     -> Either Fail (NodeFG (Either i i) f a)
 unify (i, f) (j, g) = flip S.evalState st0 $ E.runEitherT $ do
     unifyLoop               -- Unification
+    updateIDs               -- New identifiers
     k <- repr $ Left i      -- The new root
     h <- S.gets umFg        -- The new graph
     return (k, h)
@@ -203,7 +208,7 @@ unify (i, f) (j, g) = flip S.evalState st0 $ E.runEitherT $ do
 
 -- | Unify within the `UM` monad.
 unifyLoop :: (Ord i, Show i, Ord f, Eq a) => UM i f a ()
-unifyLoop = whileM popNext $ \(i, j) -> do
+unifyLoop = whileM popNext $ \(i, j) -> trace (show (i, j)) $ do
     p <- node i
     q <- node j
     mergeNodes (i, p) (j, q)
@@ -222,6 +227,8 @@ mergeNodes (i, n) (j, m) =
     doit n m
   where
     doit (Interior p) (Interior q) = do
+        -- TODO: We could probably speed it up by checking if some
+        -- of the pairs have not been already joined.
         mapM_ push $ joint p q
         setNode i $ Interior $ M.union p q
         remNode j >> i `mkReprOf` j
@@ -235,6 +242,23 @@ mergeNodes (i, n) (j, m) =
         | x == y    = remNode j >> i `mkReprOf` j
         | otherwise = uniFail
     joint x y = M.elems $ M.intersectionWith (,) x y
+
+
+-- | Traverse the graph and update node identifiers.  As a side effect,
+-- the `umDs` component of the state will be cleared.
+updateIDs :: Ord i => UM i f a ()
+updateIDs = S.modify $ \UMS{..} ->
+    let upd (Interior m) = Interior $ M.map rep m
+        upd (Frontier x) = Frontier x
+        rep = flip D.repr umDs
+        both f (x, y) = (f x, f y)
+    in UMS
+        { umSq  = fmap (both rep) umSq
+        -- Keys do not need to be updated, becase an invariant is
+        -- preserved that only representants are stored as keys.
+        -- TODO: Give this info also in a more visible place!
+        , umFg  = M.map upd umFg
+        , umDs  = D.empty }
 
 
 --------------------------------------------------------------------
@@ -354,3 +378,38 @@ test5 = do
         , (2, Interior $ M.fromList [('a', 4)])
         , (3, Frontier 'x')
         , (4, Frontier 'x') ]
+
+
+test5v2 :: IO ()
+test5v2 = do
+    print $ unify (1, f1) (1, f2)
+  where
+    f1 :: FG Int Char Char
+    f1 = M.fromList
+        [ (1, Interior $ M.fromList
+            [('a', 2), ('b', 2), ('c', 3)])
+        , (2, Interior M.empty)
+        , (3, Interior $ M.fromList [('a', 4)])
+        , (4, Frontier 'x') ]
+    f2 = M.fromList
+        [ (1, Interior $ M.fromList
+            [('a', 2), ('b', 3), ('c', 3)])
+        , (2, Interior $ M.fromList [('a', 4)])
+        , (3, Interior M.empty)
+        , (4, Frontier 'x') ]
+
+
+test6 :: IO ()
+test6 = do
+    print $ unify (1, f1) (1, f2)
+  where
+    f1 :: FG Int Char Char
+    f1 = M.fromList
+        [ (1, Interior $ M.fromList
+            [('a', 1), ('b', 2)])
+        , (2, Interior $ M.fromList [('a', 3)])
+        , (3, Interior M.empty) ]
+    f2 = M.fromList
+        [ (1, Interior $ M.fromList [('a', 2)])
+        , (2, Interior $ M.fromList
+            [('a', 1), ('b', 2)]) ]
