@@ -37,7 +37,8 @@ import qualified Control.Error as E
 import qualified Data.Map.Strict as M
 import qualified Data.Sequence as Seq
 import           Data.Sequence (Seq, (<|), (|>), ViewL(..))
-import qualified Data.Partition as P
+
+import qualified NLP.FeatureStructure.DisjSet as D
 
 
 -- | A feature graph with node identifiers of type `i`, edges labeled
@@ -105,7 +106,7 @@ data UMS i f a = UMS {
     -- | A feature graph.
     , umFg  :: FG i f a
     -- | A disjoint-set covering information about representants.
-    , umDs  :: P.Partition i }
+    , umDs  :: D.DisjSet i }
 
 
 -- | Error types for the unification monad.
@@ -137,7 +138,7 @@ push x = S.modify $ \ums@UMS{..} -> ums {umSq = umSq |> x}
 -- | Return the representant of the given node.
 -- TODO: It doesn't fail with the `Other`, perhaps we should change that?
 repr :: Ord i => i -> UM i f a i
-repr x = P.rep <$> S.gets umDs <*> pure x
+repr x = D.repr x <$> S.gets umDs
 
 
 -- | Cut-off the computation.
@@ -163,7 +164,7 @@ node x = do
 -- in the end!
 mkReprOf :: Ord i => i -> i -> UM i f a ()
 mkReprOf x y = S.modify $ \ums@UMS{..} ->
-    ums {umDs = P.join x y umDs}
+    ums {umDs = D.mkReprOf x y umDs}
 
 
 -- | Set node under the given identifier.
