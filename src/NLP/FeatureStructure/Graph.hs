@@ -111,6 +111,11 @@ pass :: UM i f a b
 pass = undefined
 
 
+-- | Unification fail.
+uniFail :: UM i f a b
+uniFail = undefined
+
+
 -- | Node behind the identifier.
 node :: i -> UM i f a (Node i f a)
 node = undefined
@@ -160,7 +165,7 @@ unify (i0, f0) (j0, g0) =
 -- are given.
 -- TODO: Perhaps we should supply the function with the
 -- node pair; it might be more elemegant in the end.
-mergeTop :: Eq i => UM i f a ()
+mergeTop :: (Eq i, Eq a) => UM i f a ()
 mergeTop = do
     -- Pop the node pair from the queue.
     (i, j) <- popRepr
@@ -181,11 +186,22 @@ popRepr = do
 
 
 -- | Merge the two given nodes.
-mergeNodes :: NodeID i f a -> NodeID i f a -> UM i f a ()
-mergeNodes (i, Interior p) (j, Interior q) = do
-    setNode i $ Interior $ mergeEdgeMaps p q
-    remNode j
-    i `mkReprOf` j
+mergeNodes :: Eq a => NodeID i f a -> NodeID i f a -> UM i f a ()
+mergeNodes (i, n) (j, m) =
+    doit n m
+  where
+    doit (Interior p) (Interior q) = do
+        setNode i $ Interior $ mergeEdgeMaps p q
+        remNode j >> i `mkReprOf` j
+    doit (Frontier _) (Interior q)
+        | M.null q  = remNode j >> i `mkReprOf` j
+        | otherwise = uniFail
+    doit (Interior p) (Frontier _)
+        | M.null p  = remNode i >> j `mkReprOf` i
+        | otherwise = uniFail
+    doit (Frontier x) (Frontier y)
+        | x == y    = remNode j >> i `mkReprOf` j
+        | otherwise = uniFail
 
 
 -- | Compute the union of the two given edge maps.  In case
