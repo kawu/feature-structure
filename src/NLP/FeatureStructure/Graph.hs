@@ -39,16 +39,19 @@ module NLP.FeatureStructure.Graph
 import           Prelude hiding (log)
 
 import           Control.Applicative ((<$>))
+import           Control.Monad (forM)
 import           Control.Monad.Identity (Identity, runIdentity)
 import           Control.Monad.Trans.Maybe
 import qualified Control.Monad.State.Strict as S
 import qualified Control.Error as E
 import           Control.Monad.IO.Class (MonadIO, liftIO)
+import qualified Data.Traversable as Tr
 import qualified Pipes as P
 
 import qualified Data.Map.Strict as M
 import qualified Data.Sequence as Seq
 import           Data.Sequence (Seq, (|>), ViewL(..))
+import qualified Control.Monad.Atom as Atom
 
 import qualified NLP.FeatureStructure.DisjSet as D
 
@@ -285,7 +288,7 @@ type NodeFG i f a = (i, FG i f a)
 unify
     :: Uni i f a
     => NodeFG i f a -> NodeFG i f a
-    -> Maybe (NodeFG (Either i i) f a)
+    -> Maybe (NodeFG Int f a)
 unify n m
     = runIdentity
     $ flip S.evalStateT (unifySt0 n m)
@@ -297,7 +300,7 @@ unify n m
 unifyIO
     :: Uni i f a
     => NodeFG i f a -> NodeFG i f a
-    -> IO (Maybe (NodeFG (Either i i) f a))
+    -> IO (Maybe (NodeFG Int f a))
 unifyIO n m
     = flip S.evalStateT (unifySt0 n m)
     $ runMaybeT $ logLoud
@@ -309,13 +312,13 @@ unifyGen
     :: (Uni i f a, Monad m)
     => NodeFG i f a -> NodeFG i f a
     -> UMT (Either i i) f a m
-        (NodeFG (Either i i) f a)
-unifyGen (i, _f) (_j, _g) = do
+        (NodeFG Int f a)
+unifyGen (i, _) (_, _) = do
     unifyLoop               -- Unification
     k <- repr $ Left i      -- The new root
     updateIDs               -- Update identifiers
     h <- S.gets umFg        -- The new graph
-    return (k, h)
+    return $ reIdent (k, h)
 
 
 -- | Initial state of the unification computation.
@@ -383,6 +386,27 @@ updateIDs = S.modify $ \UMS{..} ->
         -- in the graph (e.g. it has been removed) will lead to
         -- incorrect results.
         , umDs  = D.empty }
+
+
+--------------------------------------------------------------------
+-- Assign new identifiers
+--------------------------------------------------------------------
+
+
+-- | Assign new node identifiers [0, 1, ..].
+reIdent :: Ord i => NodeFG i f a -> NodeFG Int f a
+reIdent (r, f) = Atom.evalAtom $ do
+    s <- Atom.toAtom r
+    -- TODO: To speedup things, we could try to use
+    -- M.toAscList/M.fromAscList pair here.
+    g <- forM (M.toList f) $ \(i, x) -> do 
+        j <- Atom.toAtom i
+        y <- reIdentNode x
+        return (j, y)
+    return (s, M.fromList g)
+  where
+    reIdentNode (Interior m) = fmap Interior $ Tr.mapM Atom.toAtom m
+    reIdentNode (Frontier x) = return $ Frontier x
 
 
 --------------------------------------------------------------------
