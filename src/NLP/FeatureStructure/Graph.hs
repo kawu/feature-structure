@@ -1,6 +1,8 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE RecordWildCards #-}
--- {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 
 -- | A graph-based representation of a feature structure.
@@ -18,7 +20,7 @@ module NLP.FeatureStructure.Graph
 
 -- * Unification
 , unify
-, Fail (..)
+, unifyIO
 
 -- * Tests
 , test1
@@ -30,14 +32,19 @@ module NLP.FeatureStructure.Graph
 , test5
 , test5v2
 , test6
+, test6v2
 ) where
 
 
+import           Prelude hiding (log)
+
 import           Control.Applicative ((<$>))
-import           Control.Monad (guard)
+import           Control.Monad.Identity (Identity, runIdentity)
 import           Control.Monad.Trans.Maybe
 import qualified Control.Monad.State.Strict as S
 import qualified Control.Error as E
+import           Control.Monad.IO.Class (MonadIO, liftIO)
+import qualified Pipes as P
 
 import qualified Data.Map.Strict as M
 import qualified Data.Sequence as Seq
@@ -46,6 +53,35 @@ import           Data.Sequence (Seq, (|>), ViewL(..))
 import qualified NLP.FeatureStructure.DisjSet as D
 
 import Debug.Trace (trace)
+
+
+--------------------------------------------------------------------
+-- Logging
+--------------------------------------------------------------------
+
+
+-- | Log a value.
+log :: Monad m => String -> P.Producer' String m ()
+log = P.yield
+
+
+-- | Run logger in the IO-based monad stack.
+logLoud :: MonadIO m => P.Producer String m r -> m r
+logLoud p = P.runEffect $ P.for p (liftIO . putStrLn)
+
+
+-- | Supress logging messages. 
+logSilent :: Monad m => P.Producer a m r -> m r
+logSilent p = P.runEffect $ P.for p P.discard
+
+
+-- purely :: P.Producer String Identity () -> [String]
+-- purely = Pipes.Prelude.toList
+
+
+--------------------------------------------------------------------
+-- Feature graph
+--------------------------------------------------------------------
 
 
 -- | A feature graph with node identifiers of type `i`, edges labeled
@@ -106,76 +142,136 @@ data UMS i f a = UMS {
     , umDs  :: D.DisjSet i }
 
 
--- | Error types for the unification monad.
-data Fail
-    = UniFail           -- ^ Non-recoverable failure of unification
-    | OtherFail String  -- ^ An unexpected runtime error
-    deriving (Show, Eq, Ord)
+-- | The unification monad transformer.
+type UMT i f a m b =
+    P.Producer String
+    (MaybeT
+    (S.StateT (UMS i f a) m)) b
 
 
--- | The unification monad.
-type UM i f a b = E.EitherT Fail (S.State (UMS i f a)) b
+-- -- | The unification monad.
+-- type UM i f a b = UMT i f a Identity b
+
+
+--------------------------------------------------------------------
+-- Unification monad: class
+--------------------------------------------------------------------
+
+
+class (Show i, Ord i, Show a, Eq a, Show f, Ord f)
+    => Uni i f a where
+instance (Show i, Ord i, Show a, Eq a, Show f, Ord f)
+    => Uni i f a where
+
+
+--------------------------------------------------------------------
+-- Unification monad: core
+--------------------------------------------------------------------
 
 
 -- | Pop the node pair from the queue.  TODO: By the way, does
 -- it have to be a queue for the algorithm to be correct?
-pop :: UM i f a (Maybe (i, i))
-pop = S.state $ \ums@UMS{..} -> case Seq.viewl umSq of
-    EmptyL  -> (Nothing, ums)
-    x :< sq -> (Just x, ums {umSq = sq})
+pop :: (Uni i f a, Monad m) => UMT i f a m (Maybe (i, i))
+pop = do
+    mx <- S.state $ \ums@UMS{..} -> case Seq.viewl umSq of
+        EmptyL  -> (Nothing, ums)
+        x :< sq -> (Just x, ums {umSq = sq})
+    log $ "[pop] " ++ show mx
+    return mx
 
 
 -- | Push the node pair into the queue.
-push :: (i, i) -> UM i f a ()
-push x = S.modify $ \ums@UMS{..} -> ums {umSq = umSq |> x}
+push :: (Uni i f a, Monad m) => (i, i) -> UMT i f a m ()
+push x = do
+    log $ "[push] " ++ show x
+    S.modify $ \ums@UMS{..} -> ums {umSq = umSq |> x}
 
 
 -- | Return the representant of the given node.
 -- TODO: It doesn't fail with the `Other`, perhaps we should change that?
-repr :: Ord i => i -> UM i f a i
-repr x = D.repr x <$> S.gets umDs
-
-
--- | Unification failure.
-uniFail :: UM i f a b
-uniFail = E.left UniFail
-
-
--- | Node behind the identifier.
-node :: (Ord i, Show i) => i -> UM i f a (Node i f a)
-node x = do
-    fg <- S.gets umFg
-    E.tryJust
-        (OtherFail $ "Node " ++ show x ++ " not found")
-        (M.lookup x fg)
+repr :: (Uni i f a, Monad m) => i -> UMT i f a m i
+repr x = do
+    y <- D.repr x <$> S.gets umDs
+    log $ "[repr] " ++ show x ++ " -> " ++ show y
+    return y
 
 
 -- | Set the representant of the node.
-mkReprOf :: Ord i => i -> i -> UM i f a ()
-mkReprOf x y = S.modify $ \ums@UMS{..} ->
-    ums {umDs = D.mkReprOf x y umDs}
+mkReprOf :: (Uni i f a, Monad m) => i -> i -> UMT i f a m ()
+mkReprOf x y = do
+    log $ "[mkReprOf] " ++ show y ++ " -> " ++ show x
+    S.modify $ \ums@UMS{..} ->
+        ums {umDs = D.mkReprOf x y umDs}
+
+
+-- | Unification failure.
+uniFail :: Monad m => UMT i f a m b
+uniFail = P.lift E.nothing
+
+
+-- | Node behind the identifier.
+node :: (Uni i f a, Monad m) => i -> UMT i f a m (Node i f a)
+node x = do
+    fg <- S.gets umFg
+    case M.lookup x fg of
+        Just y  -> return y
+        Nothing -> do
+            log $ "ERROR: node " ++ show x ++ " doesn't exist!"
+            uniFail
 
 
 -- | Set node under the given identifier.
-setNode :: Ord i => i -> Node i f a -> UM i f a ()
-setNode i x = S.modify $ \ums@UMS{..} ->
-    ums {umFg = M.insert i x umFg}
+setNode :: (Uni i f a, Monad m) => i -> Node i f a -> UMT i f a m ()
+setNode i x = do
+    log $ trace (show "!!!!") $ "[setNode] " ++ show i ++ " -> " ++ show x
+    S.modify $ \ums@UMS{..} ->
+        ums {umFg = M.insert i x umFg}
 
 
 -- | Remove node under the given identifier.
-remNode :: Ord i => i -> UM i f a ()
-remNode i = S.modify $ \ums@UMS{..} ->
-    ums {umFg = M.delete i umFg}
+remNode :: (Uni i f a, Monad m) => i -> UMT i f a m ()
+remNode i = do
+    log $ "[remNode] " ++ show i
+    S.modify $ \ums@UMS{..} ->
+        ums {umFg = M.delete i umFg}
 
 
--- | Pop next pair of distinct nodes from the queue.
-popNext :: Ord i => UM i f a (Maybe (i, i))
-popNext = runMaybeT $ do
-    (i0, j0) <- MaybeT pop
+--------------------------------------------------------------------
+-- Unification monad: advanced
+--------------------------------------------------------------------
+
+
+-- -- | Pop next pair of distinct nodes from the queue.
+-- popNext :: (Ord i, Show i, Monad m) => UMT i f a m (Maybe (i, i))
+-- popNext = whileM (fmap not . isEmptyQ) tryPop
+
+
+-- | Top of the queue, failure.
+data Fail
+    = Equal -- ^ Top values are not distinct
+    | Empty -- ^ Queue is empty
+
+
+-- | Pop next pair of nodes from the queue.  If the nodes are
+-- not distinct, return `Nothing`.
+popNext :: (Uni i f a, Monad m) => UMT i f a m (Either Fail (i, i))
+popNext = E.runEitherT $ do
+    (i0, j0) <- E.tryJust Empty =<< S.lift pop
     i <- S.lift $ repr i0
     j <- S.lift $ repr j0
-    guard $ i /= j
+    E.tryAssert Equal $ i /= j
     return (i, j)
+
+
+-- | Run the second monad on the elements acquired from the first monad
+-- as long as the first monad doesn't return the `Empty` element.
+whileNotEmpty :: Monad m => (m (Either Fail a)) -> (a -> m ()) -> m ()
+whileNotEmpty cond m = do
+    mx <- cond
+    case mx of
+        Right x     -> m x >> whileNotEmpty cond m
+        Left Equal  -> whileNotEmpty cond m
+        Left Empty  -> return ()
 
 
 --------------------------------------------------------------------
@@ -187,28 +283,54 @@ popNext = runMaybeT $ do
 type NodeFG i f a = (i, FG i f a)
 
 
--- | Unify two feature graphs.
+-- | Unify two feature graphs.  Logging messages will be printed to stdout.
 unify
-    :: (Ord i, Show i, Eq a, Ord f)
+    :: Uni i f a
     => NodeFG i f a -> NodeFG i f a
-    -> Either Fail (NodeFG (Either i i) f a)
-unify (i, f) (j, g) = flip S.evalState st0 $ E.runEitherT $ do
+    -> Maybe (NodeFG (Either i i) f a)
+unify n m
+    = runIdentity
+    $ flip S.evalStateT (unifySt0 n m)
+    $ runMaybeT $ logSilent
+    $ unifyGen n m
+
+
+-- | Unify two feature graphs.  Logging messages will be printed to stdout.
+unifyIO
+    :: Uni i f a
+    => NodeFG i f a -> NodeFG i f a
+    -> IO (Maybe (NodeFG (Either i i) f a))
+unifyIO n m
+    = flip S.evalStateT (unifySt0 n m)
+    $ runMaybeT $ logLoud
+    $ unifyGen n m
+
+
+-- | Unify two feature graphs.  Generic function.
+unifyGen
+    :: (Uni i f a, Monad m)
+    => NodeFG i f a -> NodeFG i f a
+    -> UMT (Either i i) f a m
+        (NodeFG (Either i i) f a)
+unifyGen (i, _f) (_j, _g) = do
     unifyLoop               -- Unification
-    updateIDs               -- New identifiers
     k <- repr $ Left i      -- The new root
+    updateIDs               -- Update identifiers
     h <- S.gets umFg        -- The new graph
     return (k, h)
-  where
-    -- Initial unification state
-    st0 = UMS
-        { umSq  = Seq.singleton (Left i, Right j)
-        , umFg  = fromTwo f g
-        , umDs  = D.empty }
+
+
+-- | Initial state of the unification computation.
+unifySt0 :: Ord i => NodeFG i f a -> NodeFG i f a -> UMS (Either i i) f a
+unifySt0 (i, f) (j, g) = UMS
+    { umSq  = Seq.singleton (Left i, Right j)
+    , umFg  = fromTwo f g
+    , umDs  = D.empty }
 
 
 -- | Unify within the `UM` monad.
-unifyLoop :: (Ord i, Show i, Ord f, Eq a) => UM i f a ()
-unifyLoop = whileM popNext $ \(i, j) -> trace (show (i, j)) $ do
+unifyLoop :: (Uni i f a, Monad m) => UMT i f a m ()
+unifyLoop = whileNotEmpty popNext $ \(i, j) -> do
     p <- node i
     q <- node j
     mergeNodes (i, p) (j, q)
@@ -220,9 +342,9 @@ type NodeID i f a = (i, Node i f a)
 
 -- | Merge the two given nodes.
 mergeNodes
-    :: (Eq a, Ord i, Ord f)
+    :: (Uni i f a, Monad m)
     => NodeID i f a -> NodeID i f a
-    -> UM i f a ()
+    -> UMT i f a m ()
 mergeNodes (i, n) (j, m) =
     doit n m
   where
@@ -246,7 +368,7 @@ mergeNodes (i, n) (j, m) =
 
 -- | Traverse the graph and update node identifiers.  As a side effect,
 -- the `umDs` component of the state will be cleared.
-updateIDs :: Ord i => UM i f a ()
+updateIDs :: (Uni i f a, Monad m) => UMT i f a m ()
 updateIDs = S.modify $ \UMS{..} ->
     let upd (Interior m) = Interior $ M.map rep m
         upd (Frontier x) = Frontier x
@@ -258,22 +380,11 @@ updateIDs = S.modify $ \UMS{..} ->
         -- preserved that only representants are stored as keys.
         -- TODO: Give this info also in a more visible place!
         , umFg  = M.map upd umFg
+        -- The implementator has to be aware, that after this step
+        -- using the `repr` function on a node which is not present
+        -- in the graph (e.g. it has been removed) will lead to
+        -- incorrect results.
         , umDs  = D.empty }
-
-
---------------------------------------------------------------------
--- Misc
---------------------------------------------------------------------
-
-
--- | Run the second monad in a loop as long as the first one is able
--- to supply value to it.
-whileM :: Monad m => (m (Maybe a)) -> (a -> m ()) -> m ()
-whileM cond m = do
-    mx <- cond
-    case mx of
-        Nothing -> return ()
-        Just x  -> m x >> whileM cond m
 
 
 --------------------------------------------------------------------
@@ -283,7 +394,7 @@ whileM cond m = do
 
 test1 :: IO ()
 test1 = do
-    print $ unify (1 :: Int, f1) (1, f2)
+    print =<< unifyIO (1 :: Int, f1) (1, f2)
   where
     f1 = M.fromList
         [ (1, Interior $ M.fromList
@@ -298,7 +409,7 @@ test1 = do
 
 test2 :: IO ()
 test2 = do
-    print $ unify (1 :: Int, f1) (1, f2)
+    print =<< unifyIO (1 :: Int, f1) (1, f2)
   where
     f1 = M.fromList
         [(1, Interior $ M.fromList [('a', 1)])]
@@ -309,7 +420,7 @@ test2 = do
 
 test2v2 :: IO ()
 test2v2 = do
-    print $ unify (1 :: Int, f1) (1, f2)
+    print =<< unifyIO (1 :: Int, f1) (1, f2)
   where
     f1 :: FG Int Char ()
     f1 = M.fromList
@@ -321,7 +432,7 @@ test2v2 = do
 
 test3 :: IO ()
 test3 = do
-    print $ unify (1 :: Int, f1) (1, f2)
+    print =<< unifyIO (1 :: Int, f1) (1, f2)
   where
     f1 :: FG Int Char ()
     f1 = M.fromList
@@ -332,7 +443,7 @@ test3 = do
 
 test4 :: IO ()
 test4 = do
-    print $ unify (1 :: Int, f1) (1, f2)
+    print =<< unifyIO (1 :: Int, f1) (1, f2)
   where
     f1 = M.fromList
         [ (1, Interior $ M.fromList
@@ -348,7 +459,7 @@ test4 = do
 
 test4v2 :: IO ()
 test4v2 = do
-    print $ unify (1 :: Int, f1) (1, f2)
+    print =<< unifyIO (1 :: Int, f1) (1, f2)
   where
     f1 = M.fromList
         [ (1, Interior $ M.fromList
@@ -364,7 +475,7 @@ test4v2 = do
 
 test5 :: IO ()
 test5 = do
-    print $ unify (1 :: Int, f1) (1, f2)
+    print =<< unifyIO (1 :: Int, f1) (1, f2)
   where
     f1 = M.fromList
         [ (1, Interior $ M.fromList
@@ -382,7 +493,7 @@ test5 = do
 
 test5v2 :: IO ()
 test5v2 = do
-    print $ unify (1, f1) (1, f2)
+    print =<< unifyIO (1, f1) (1, f2)
   where
     f1 :: FG Int Char Char
     f1 = M.fromList
@@ -401,6 +512,22 @@ test5v2 = do
 
 test6 :: IO ()
 test6 = do
+    print =<< unifyIO (1, f1) (1, f2)
+  where
+    f1 :: FG Int Char Char
+    f1 = M.fromList
+        [ (1, Interior $ M.fromList
+            [('a', 1), ('b', 2)])
+        , (2, Interior $ M.fromList [('a', 3)])
+        , (3, Interior M.empty) ]
+    f2 = M.fromList
+        [ (1, Interior $ M.fromList [('a', 2)])
+        , (2, Interior $ M.fromList
+            [('a', 1), ('b', 2)]) ]
+
+
+test6v2 :: IO ()
+test6v2 = do
     print $ unify (1, f1) (1, f2)
   where
     f1 :: FG Int Char Char
