@@ -52,8 +52,6 @@ import           Data.Sequence (Seq, (|>), ViewL(..))
 
 import qualified NLP.FeatureStructure.DisjSet as D
 
-import Debug.Trace (trace)
-
 
 --------------------------------------------------------------------
 -- Logging
@@ -223,7 +221,7 @@ node x = do
 -- | Set node under the given identifier.
 setNode :: (Uni i f a, Monad m) => i -> Node i f a -> UMT i f a m ()
 setNode i x = do
-    log $ trace (show "!!!!") $ "[setNode] " ++ show i ++ " -> " ++ show x
+    log $ "[setNode] " ++ show i ++ " -> " ++ show x
     S.modify $ \ums@UMS{..} ->
         ums {umFg = M.insert i x umFg}
 
