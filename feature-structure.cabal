@@ -29,6 +29,7 @@ library
 
     exposed-modules:
         NLP.FeatureStructure.Graph
+      , NLP.FeatureStructure.Tree
 
     other-modules:
         NLP.FeatureStructure.DisjSet

@@ -5,10 +5,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 
 
--- | A graph-based representation of a feature structure.
---
--- At this point we assume that values are `atomic` and the only
--- operation defined over them is the equality check.
+-- | A graph representation of a feature structure.
 
 
 module NLP.FeatureStructure.Graph
@@ -19,6 +16,7 @@ module NLP.FeatureStructure.Graph
 , NodeFG
 
 -- * Unification
+, Uni
 , unify
 , unifyIO
 
@@ -155,7 +153,7 @@ type UMT i f a m b =
 
 
 --------------------------------------------------------------------
--- Unification monad: class
+-- Unification class
 --------------------------------------------------------------------
 
 
@@ -284,7 +282,7 @@ whileNotEmpty cond m = do
 type NodeFG i f a = (i, FG i f a)
 
 
--- | Unify two feature graphs.  Logging messages will be printed to stdout.
+-- | Unify two feature graphs.  Log messages will be ignored.
 unify
     :: Uni i f a
     => NodeFG i f a -> NodeFG i f a
@@ -296,7 +294,7 @@ unify n m
     $ unifyGen n m
 
 
--- | Unify two feature graphs.  Logging messages will be printed to stdout.
+-- | Unify two feature graphs.  Log messages will be printed to stdout.
 unifyIO
     :: Uni i f a
     => NodeFG i f a -> NodeFG i f a
