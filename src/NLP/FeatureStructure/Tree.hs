@@ -7,27 +7,33 @@
 
 module NLP.FeatureStructure.Tree
 ( 
--- * Feature trees 
-  FT
+-- * Types
+  AV
+, FT (..)
 , FN (..)
-, FV (..)
+, FF
+, ID
 
--- * Compile 
-, compileIO
+-- * Compile
+, compileTreeIO
 
 -- * Convenient syntax
-, TreeM (..)
-, Tree
-, tree
--- ** Combinators
-, attr
+, AvmM (..)
+, Avm
+, avm
+-- ** Core combinators
+, feat
 , atom
+, name
+, undef
+-- ** Other combinators
 , leaf
 -- ** Infix verions
 , (##)
 ) where
 
 
+-- import           Control.Applicative ((<$>))
 import           Control.Monad (forM, forM_)
 import qualified Control.Monad.State.Strict as S
 import           Control.Monad.IO.Class (MonadIO)
@@ -45,39 +51,36 @@ import qualified NLP.FeatureStructure.Join as J
 
 
 --------------------------------------------------------------------
--- Feature tree
+-- Types
 --------------------------------------------------------------------
 
 
--- | A feature tree consists of a list of edges.  Multiple subtrees
--- can be assigned to a single feature (but they will have to be
--- unified).
-type FT i f a = M.Map f (FN i f a)
+-- | An attribute-value map.
+type AV i f a = M.Map f (FN i f a)
 
 
--- NOTE: It would make sense to use the following type:
--- 
--- > type FT i f a = [(f, FN i f a)]
---
--- It would allow the user to define multiple subtrees for a particular
--- feature.  It would also complicate the implementation, though, so
--- I'm not sure if the flexibility user gains is worth it.
+-- | A feature tree.
+data FT i f a
+    = Subs (AV i f a)
+    | Atom a
+    deriving (Show, Eq, Ord)
 
 
--- | A feature value with optional identifier.
+-- | A named feature tree, i.e. with an optional identifier.
 data FN i f a = FN {
     -- | Optional identifier.
-      fnId  :: Maybe i
+      ide :: Maybe i
     -- | The actual value.
-    , fnVl  :: FV i f a
+    , val :: FT i f a
     } deriving (Show, Eq, Ord)
 
 
--- | A feature value.
-data FV i f a
-    = Subs (FT i f a)   -- ^ A substructure
-    | Atom a            -- ^ An atomic value
-    deriving (Show, Eq, Ord)
+-- | A feature forest.
+type FF i f a = [FN i f a]
+
+
+-- | An identifier.
+type ID = Int
 
 
 --------------------------------------------------------------------
@@ -85,16 +88,14 @@ data FV i f a
 --------------------------------------------------------------------
 
 
--- | An identifier.
-type ID = Int
-
-
--- | Compile `FT` to a graph representation.
-compileIO :: (MonadIO m, Uni i f a) => FT i f a -> m (Maybe (G.NodeFG ID f a))
-compileIO x = do
+-- | Compile feature tree to a graph representation.
+compileTreeIO
+    :: (MonadIO m, Uni i f a) => FT i f a
+    -> m (Maybe (G.NodeFG ID f a))
+compileTreeIO x = do
     -- First we need to convert a tree to a trivial feature graph
     -- (`conR`) and identify nodes which need to be joined.
-    (r0, st) <- S.runStateT (fromTree x) initConS
+    (r0, st) <- S.runStateT (fromFT x) initConS
     -- The second step is to join all nodes which have to be
     -- merged based on the identifiers specified by the user.
     J.runJoinIO (conR st) $ do
@@ -126,26 +127,26 @@ initConS = ConS
 type ConM i f a m b = S.StateT (ConS i f a) m b
 
 
--- | Convert the given tree to a trivial feature graph.
--- The result (`conI` and `conR`) will be represented
--- within the state of the monad.
-fromTree :: (Monad m, Uni i f a) => FT i f a -> ConM i f a m ID
-fromTree fs = do
-    i  <- newID
-    xs <- forM (M.toList fs) $ \(ft, FN{..}) -> do
-        x <- fromFV fnVl
-        justM (register x) fnId
-        return (ft, x)
-    addNode i $ G.Interior $ M.fromList xs
+-- | Convert the given feature value to a feature graph.
+fromFT :: (Monad m, Uni i f a) => FT i f a -> ConM i f a m ID
+fromFT (Subs x) = fromAV x
+fromFT (Atom x) = do
+    i <- newID
+    addNode i $ G.Frontier x
     return i
 
 
--- | Convert the given feature value to a feature graph.
-fromFV :: (Monad m, Uni i f a) => FV i f a -> ConM i f a m ID
-fromFV (Subs x) = fromTree x
-fromFV (Atom x) = do
-    i <- newID
-    addNode i $ G.Frontier x
+-- | Convert the given tree to a trivial feature graph.
+-- The result (`conI` and `conR`) will be represented
+-- within the state of the monad.
+fromAV :: (Monad m, Uni i f a) => AV i f a -> ConM i f a m ID
+fromAV fs = do
+    i  <- newID
+    xs <- forM (M.toList fs) $ \(ft, FN{..}) -> do
+        x <- fromFT val
+        justM (register x) ide
+        return (ft, x)
+    addNode i $ G.Interior $ M.fromList xs
     return i
 
 
@@ -190,17 +191,17 @@ addNode x y = S.modify $ \st@ConS{..} ->
 
 
 -- | A monad providing convenient syntax for defining feature trees.
-newtype TreeM i f a b = TreeM { unTree :: S.State (FT i f a) b }
-    deriving (Monad, S.MonadState (FT i f a))
+newtype AvmM i f a b = AvmM { unAvm :: S.State (AV i f a) b }
+    deriving (Monad, S.MonadState (AV i f a))
 
 
 -- | Convenient type alias that will probably be used most of the time.
-type Tree i f a = TreeM i f a ()
+type Avm i f a = AvmM i f a ()
 
 
--- | Runs the TreeM monad, generating a tree.
-tree :: TreeM i f a b -> FT i f a
-tree m = S.execState (unTree m) M.empty
+-- | Runs the AvmM monad, generating a feature tree.
+avm :: AvmM i f a b -> FN i f a
+avm m = FN Nothing $ Subs $ S.execState (unAvm m) M.empty
 
 
 -- -- | Monoid instance does a union of the two maps with the second map
@@ -211,14 +212,14 @@ tree m = S.execState (unTree m) M.empty
 
 
 --------------------------------------------------------------------
--- Combinators
+-- Core combinators
 --------------------------------------------------------------------
 
 
 -- | Forces a subtree to be added.  If the feature already exists,
 -- its value is overwritten.
-attr :: Ord f => f -> FN i f a  -> Tree i f a
-attr ft fn = S.modify $ M.insert ft fn
+feat :: Ord f => f -> FN i f a  -> Avm i f a
+feat ft fn = S.modify $ M.insert ft fn
 
 
 -- | An atomic value.
@@ -226,9 +227,24 @@ atom :: a -> FN i f a
 atom = FN Nothing . Atom
 
 
+-- | An undefined subtree.
+undef :: FN i f a
+undef = FN Nothing $ Subs M.empty
+
+
+-- | Assign name to an `FN`.
+name :: i -> FN i f a -> FN i f a
+name i fn = fn { ide = Just i }
+
+
+--------------------------------------------------------------------
+-- Other combinators
+--------------------------------------------------------------------
+
+
 -- | An atomic value assigned to a feature.
-leaf :: Ord f => f -> a -> Tree i f a
-leaf x = attr x . atom
+leaf :: Ord f => f -> a -> Avm i f a
+leaf x = feat x . atom
 
 
 --------------------------------------------------------------------
@@ -236,9 +252,9 @@ leaf x = attr x . atom
 --------------------------------------------------------------------
 
 
--- | An infix version of `attr`.
-(##) :: Ord f => f -> FN i f a  -> Tree i f a
-(##) = attr
+-- | An infix version of `feat`.
+(##) :: Ord f => f -> FN i f a  -> Avm i f a
+(##) = feat
 infixr 0 ##
 
 
