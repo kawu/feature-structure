@@ -13,7 +13,7 @@ module NLP.FeatureStructure.Tree
 , FV (..)
 
 -- * Compile 
--- , compileIO
+, compileIO
 
 -- -- * Language
 -- , TreeM (..)
@@ -21,8 +21,9 @@ module NLP.FeatureStructure.Tree
 ) where
 
 
-import           Control.Monad (forM)
+import           Control.Monad (forM, forM_)
 import qualified Control.Monad.State.Strict as S
+import           Control.Monad.IO.Class (MonadIO)
 import qualified Data.Set as Set
 import qualified Data.Map.Strict as M
 -- import qualified Pipes.Prelude as P
@@ -33,6 +34,7 @@ import qualified Data.Map.Strict as M
 
 import           NLP.FeatureStructure.Core
 import qualified NLP.FeatureStructure.Graph as G
+import qualified NLP.FeatureStructure.Join as J
 
 
 --------------------------------------------------------------------
@@ -73,12 +75,18 @@ type ID = Int
 
 
 -- | Compile `FT` to a graph representation.
-compileIO :: Uni i f a => FT i f a -> IO (G.NodeFG ID f a)
+compileIO :: (MonadIO m, Uni i f a) => FT i f a -> m (Maybe (G.NodeFG ID f a))
 compileIO x = do
     -- First we need to convert a tree to a trivial feature graph
     -- (`conR`) and identify nodes which need to be joined.
-    (i, st) <- S.runStateT (fromTree x) initConS
-    return (i, conR st)
+    (r0, st) <- S.runStateT (fromTree x) initConS
+    -- The second step is to join all nodes which have to be
+    -- merged based on the identifiers specified by the user.
+    J.runJoinIO (conR st) $ do
+        forM_ (M.elems $ conI st) $ \ks -> do
+            forM_ (adja $ Set.toList ks) $ \(i, j) -> do
+                J.join i j
+        J.repr r0
     
 
 -- | A state of the conversion monad.
@@ -88,7 +96,7 @@ data ConS i f a = ConS {
     -- | A mapping from old to new identifiers.
     , conI  :: M.Map i (Set.Set ID)
     -- | The result.
-    , conR  :: M.Map ID (G.Node ID f a) }
+    , conR  :: G.FG ID f a }
 
 
 -- | Initial value of the state.
@@ -198,3 +206,8 @@ addNode x y = S.modify $ \st@ConS{..} ->
 justM :: Monad m => (a -> m ()) -> Maybe a -> m ()
 justM f (Just x) = f x
 justM _ Nothing  = return ()
+
+
+-- | Pairs of adjacent elements in a list.
+adja :: [a] -> [(a, a)]
+adja xs = zip xs (drop 1 xs)
