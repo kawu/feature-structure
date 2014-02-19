@@ -1,4 +1,4 @@
--- {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards #-}
 
 
@@ -7,7 +7,7 @@
 
 module NLP.FeatureStructure.Tree
 ( 
--- * Feature tree 
+-- * Feature trees 
   FT
 , FN (..)
 , FV (..)
@@ -15,9 +15,16 @@ module NLP.FeatureStructure.Tree
 -- * Compile 
 , compileIO
 
--- -- * Language
--- , TreeM (..)
--- , Tree
+-- * Convenient syntax
+, TreeM (..)
+, Tree
+, tree
+-- ** Combinators
+, attr
+, atom
+, leaf
+-- ** Infix verions
+, (##)
 ) where
 
 
@@ -46,7 +53,15 @@ import qualified NLP.FeatureStructure.Join as J
 -- can be assigned to a single feature (but they will have to be
 -- unified).
 type FT i f a = M.Map f (FN i f a)
--- type FT i f a = [(f, FN i f a)]
+
+
+-- NOTE: It would make sense to use the following type:
+-- 
+-- > type FT i f a = [(f, FN i f a)]
+--
+-- It would allow the user to define multiple subtrees for a particular
+-- feature.  It would also complicate the implementation, though, so
+-- I'm not sure if the flexibility user gains is worth it.
 
 
 -- | A feature value with optional identifier.
@@ -174,27 +189,57 @@ addNode x y = S.modify $ \st@ConS{..} ->
 --------------------------------------------------------------------
 
 
--- -- | A monad providing convenient syntax for defining feature trees.
--- newtype TreeM i f a b = TreeM { unTree :: S.State (FT i f a) b }
---     deriving (Monad, S.MonadState (FT i f a))
--- 
--- 
--- -- | Convenient type alias that will probably be used most of the time.
--- type Tree i f a = TreeM i f a ()
--- 
--- 
--- -- -- | Monoid instance does a union of the two maps with the second map
--- -- -- overwriting any duplicates.
--- -- instance Monoid (Splices s) where
--- --     mempty  = empty
--- --     mappend = unionWithS (\_ b -> b)
--- 
--- 
--- -- | Forces a subtree to be added.  If the feature already exists,
--- -- its value is overwritten.
--- (##) :: f -> FN i f a  -> Tree i f a
--- (##) ft fn = S.modify $ M.insert ft fn
--- infixr 0 ##
+-- | A monad providing convenient syntax for defining feature trees.
+newtype TreeM i f a b = TreeM { unTree :: S.State (FT i f a) b }
+    deriving (Monad, S.MonadState (FT i f a))
+
+
+-- | Convenient type alias that will probably be used most of the time.
+type Tree i f a = TreeM i f a ()
+
+
+-- | Runs the TreeM monad, generating a tree.
+tree :: TreeM i f a b -> FT i f a
+tree m = S.execState (unTree m) M.empty
+
+
+-- -- | Monoid instance does a union of the two maps with the second map
+-- -- overwriting any duplicates.
+-- instance Monoid (Splices s) where
+--     mempty  = empty
+--     mappend = unionWithS (\_ b -> b)
+
+
+--------------------------------------------------------------------
+-- Combinators
+--------------------------------------------------------------------
+
+
+-- | Forces a subtree to be added.  If the feature already exists,
+-- its value is overwritten.
+attr :: Ord f => f -> FN i f a  -> Tree i f a
+attr ft fn = S.modify $ M.insert ft fn
+
+
+-- | An atomic value.
+atom :: a -> FN i f a
+atom = FN Nothing . Atom
+
+
+-- | An atomic value assigned to a feature.
+leaf :: Ord f => f -> a -> Tree i f a
+leaf x = attr x . atom
+
+
+--------------------------------------------------------------------
+-- Infix versions of common combinators
+--------------------------------------------------------------------
+
+
+-- | An infix version of `attr`.
+(##) :: Ord f => f -> FN i f a  -> Tree i f a
+(##) = attr
+infixr 0 ##
 
 
 --------------------------------------------------------------------

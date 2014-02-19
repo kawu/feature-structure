@@ -156,7 +156,7 @@ atom = return . Atom
 -- --------------------------------------------------------------------
 -- 
 -- 
--- -- | An atomic value assigned to an feature.
+-- -- | An atomic value assigned to a feature.
 -- leaf x y = attr x $ atom y
 -- 
 -- 
