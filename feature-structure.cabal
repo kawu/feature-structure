@@ -28,8 +28,12 @@ library
       , monad-atom              >= 0.4      && < 0.5
 
     exposed-modules:
-        NLP.FeatureStructure.Graph
+        NLP.FeatureStructure.Core
       , NLP.FeatureStructure.Tree
+      , NLP.FeatureStructure.Graph
+      , NLP.FeatureStructure.Join
+      , NLP.FeatureStructure.Unify
+      , NLP.FeatureStructure.Tests
 
     other-modules:
         NLP.FeatureStructure.DisjSet

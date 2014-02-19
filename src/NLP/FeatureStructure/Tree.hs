@@ -30,8 +30,9 @@ import qualified Data.Map.Strict as M
 -- import qualified Data.Sequence as Seq
 -- import           Data.Sequence (Seq, (|>), ViewL(..))
 
+
+import           NLP.FeatureStructure.Core
 import qualified NLP.FeatureStructure.Graph as G
-import           NLP.FeatureStructure.Graph (Uni)
 
 
 --------------------------------------------------------------------
@@ -74,6 +75,8 @@ type ID = Int
 -- | Compile `FT` to a graph representation.
 compileIO :: Uni i f a => FT i f a -> IO (G.NodeFG ID f a)
 compileIO x = do
+    -- First we need to convert a tree to a trivial feature graph
+    -- (`conR`) and identify nodes which need to be joined.
     (i, st) <- S.runStateT (fromTree x) initConS
     return (i, conR st)
     
@@ -84,7 +87,7 @@ data ConS i f a = ConS {
       conC  :: Int
     -- | A mapping from old to new identifiers.
     , conI  :: M.Map i (Set.Set ID)
-    -- | The result set.
+    -- | The result.
     , conR  :: M.Map ID (G.Node ID f a) }
 
 
@@ -100,7 +103,9 @@ initConS = ConS
 type ConM i f a m b = S.StateT (ConS i f a) m b
 
 
--- | Convert the given tree to a feature graph.
+-- | Convert the given tree to a trivial feature graph.
+-- The result (`conI` and `conR`) will be represented
+-- within the state of the monad.
 fromTree :: (Monad m, Uni i f a) => FT i f a -> ConM i f a m ID
 fromTree fs = do
     i  <- newID
