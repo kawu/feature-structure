@@ -1,7 +1,7 @@
 -- | A few unification tests.
 
 
-module NLP.FeatureStructure.Tests
+module NLP.FeatureStructure.Unify.Tests
 ( test1
 , test2
 , test2v2
