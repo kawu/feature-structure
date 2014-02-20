@@ -5,7 +5,8 @@
 
 
 module NLP.FeatureStructure.Tree.Tests
-(
+( love
+, dummy
 ) where
 
 
@@ -14,7 +15,7 @@ import qualified Data.Text as T
 
 
 import           NLP.FeatureStructure.Tree
-    (avm, leaf, atom, feat, name, undef)
+    (avm, leaf, atom, feat, name, undef, list)
 import qualified NLP.FeatureStructure.Tree as R
 
 
@@ -55,10 +56,7 @@ accusative = leaf "cas" "acc"
 
 -- | Subcategorization frame.
 subcat :: FF -> Avm
-subcat (x:xs) = do
-    feat "first" x
-    feat "rest" $ avm $ subcat xs
-subcat [] = return ()
+subcat = feat "subcat" . avm . list "first" "rest"
 
 
 -- At this point it is worth to think about how naming within
@@ -111,9 +109,11 @@ love = avm $ do
 
 dummy :: FN
 dummy = avm $ do
-    feat "f1" $ name "x" $ atom "value"
-    feat "f1" undef
-        
+    singular
+    feat "cat" $ name "x" $ atom "v"
+    subcat $ single $ do
+        feat "cat" $ name "x" undef
+        leaf "case" "acc"
 
 
 --------------------------------------------------------------------

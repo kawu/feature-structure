@@ -15,7 +15,8 @@ module NLP.FeatureStructure.Tree
 , ID
 
 -- * Compile
-, compileTreeIO
+, compile
+, compileT
 
 -- * Convenient syntax
 , AvmM (..)
@@ -28,6 +29,7 @@ module NLP.FeatureStructure.Tree
 , undef
 -- ** Other combinators
 , leaf
+, list
 -- ** Infix verions
 , (##)
 ) where
@@ -39,6 +41,8 @@ import qualified Control.Monad.State.Strict as S
 import           Control.Monad.IO.Class (MonadIO)
 import qualified Data.Set as Set
 import qualified Data.Map.Strict as M
+import           Data.Traversable (Traversable)
+import qualified Data.Traversable as T
 -- import qualified Pipes.Prelude as P
 -- import           Pipes
 -- import qualified Data.Sequence as Seq
@@ -88,14 +92,14 @@ type ID = Int
 --------------------------------------------------------------------
 
 
--- | Compile feature tree to a graph representation.
-compileTreeIO
-    :: (MonadIO m, Uni i f a) => FT i f a
-    -> m (Maybe (G.NodeFG ID f a))
-compileTreeIO x = do
+-- | Compile a named feature tree to a graph representation.
+compile
+    :: (MonadIO m, Uni i f a) => FN i f a
+    -> m (Maybe (ID, G.FG ID f a))
+compile x = do
     -- First we need to convert a tree to a trivial feature graph
     -- (`conR`) and identify nodes which need to be joined.
-    (r0, st) <- S.runStateT (fromFT x) initConS
+    (r0, st) <- S.runStateT (fromFN x) initConS
     -- The second step is to join all nodes which have to be
     -- merged based on the identifiers specified by the user.
     J.runJoinIO (conR st) $ do
@@ -103,6 +107,27 @@ compileTreeIO x = do
             forM_ (adja $ Set.toList ks) $ \(i, j) -> do
                 J.join i j
         J.repr r0
+
+
+-- | Compile a traversable structure of named feature trees
+-- to a graph representation.  The resulting traversable data
+-- structure will be returned with identifiers in place of
+-- named feature trees.
+compileT
+    :: (MonadIO m, Uni i f a, Traversable t)
+    => t (FN i f a)
+    -> m (Maybe (t ID, G.FG ID f a))
+compileT t0 = do
+    -- First we need to convert a traversable to a trivial feature
+    -- graph (`conR`) and identify nodes which need to be joined.
+    (t1, st) <- S.runStateT (fromTravFN t0) initConS
+    -- The second step is to join all nodes which have to be
+    -- merged based on the identifiers specified by the user.
+    J.runJoinIO (conR st) $ do
+        forM_ (M.elems $ conI st) $ \ks -> do
+            forM_ (adja $ Set.toList ks) $ \(i, j) -> do
+                J.join i j
+        T.mapM J.repr t1
     
 
 -- | A state of the conversion monad.
@@ -127,7 +152,24 @@ initConS = ConS
 type ConM i f a m b = S.StateT (ConS i f a) m b
 
 
--- | Convert the given feature value to a feature graph.
+-- | Convert the given traversable structure of named feature trees
+-- to a trivial feature graph.
+fromTravFN
+    :: (Monad m, Uni i f a, Traversable t)
+    => t (FN i f a)
+    -> ConM i f a m (t ID)
+fromTravFN = T.mapM fromFN
+
+
+-- | Convert the given named feature tree to a feature graph.
+fromFN :: (Monad m, Uni i f a) => FN i f a -> ConM i f a m ID
+fromFN FN{..} = do
+    x <- fromFT val
+    justM ide (register x)
+    return x
+ 
+
+-- | Convert the given feature tree to a trivial feature graph.
 fromFT :: (Monad m, Uni i f a) => FT i f a -> ConM i f a m ID
 fromFT (Subs x) = fromAV x
 fromFT (Atom x) = do
@@ -142,10 +184,7 @@ fromFT (Atom x) = do
 fromAV :: (Monad m, Uni i f a) => AV i f a -> ConM i f a m ID
 fromAV fs = do
     i  <- newID
-    xs <- forM (M.toList fs) $ \(ft, FN{..}) -> do
-        x <- fromFT val
-        justM (register x) ide
-        return (ft, x)
+    xs <- forM (M.toList fs) (secondM fromFN)
     addNode i $ G.Interior $ M.fromList xs
     return i
 
@@ -247,6 +286,19 @@ leaf :: Ord f => f -> a -> Avm i f a
 leaf x = feat x . atom
 
 
+-- | A list encoded as a feature structure.
+-- The first two arguments correspond to "head" and "tail"
+-- features, TODO: odpowiednio.
+list :: Ord f => f -> f -> FF i f a -> Avm i f a
+list i j ff =
+    doit ff
+  where
+    doit (x:xs) = do
+        feat i x
+        feat j $ avm $ doit xs
+    doit [] = return ()
+
+
 --------------------------------------------------------------------
 -- Infix versions of common combinators
 --------------------------------------------------------------------
@@ -264,9 +316,16 @@ infixr 0 ##
 
 
 -- | Run a monadic action on a `Just` value.
-justM :: Monad m => (a -> m ()) -> Maybe a -> m ()
-justM f (Just x) = f x
-justM _ Nothing  = return ()
+justM :: Monad m => Maybe a -> (a -> m ()) -> m ()
+justM (Just x) f = f x
+justM Nothing  _ = return ()
+
+
+-- | Run a monadic action on a second element of a pair.
+secondM :: Monad m => (b -> m c) -> (a, b) -> m (a, c)
+secondM f (x, y) = do
+    z <- f y
+    return (x, z)
 
 
 -- | Pairs of adjacent elements in a list.
