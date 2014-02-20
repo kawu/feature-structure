@@ -15,7 +15,10 @@ module NLP.FeatureStructure.Core
 --
 -- Basic assumptions about individual types.
 --
--- TODO: Move to a separate, Core module?  And rename the class?
+-- TODO: Rename the class?
+-- TODO: It isn't ideal.  For example, the `unify` function is
+--   requires that both input graphs has identifiers of the
+--   same type.  In the general case, it doesn't have to be. 
 --------------------------------------------------------------------
 
 

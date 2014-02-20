@@ -13,7 +13,6 @@ module NLP.FeatureStructure.Graph
 -- * Basic types
   FG
 , Node (..)
-, NodeFG
 
 -- * Utility
 , fromTwo
@@ -85,10 +84,6 @@ data Node i f a
     = Interior (M.Map f i)
     | Frontier a
     deriving (Show, Eq, Ord)
-
-
--- | A graph with a selected node.
-type NodeFG i f a = (i, FG i f a)
 
 
 --------------------------------------------------------------------
