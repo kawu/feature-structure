@@ -33,7 +33,11 @@ import qualified NLP.FeatureStructure.Join as J
 
 -- | Unify two feature graphs.  Log messages resulting from 
 -- the joining process will be ignored.
-unify :: Uni i f a => (i, FG i f a) -> (i, FG i f a) -> Maybe (Int, FG Int f a)
+unify
+    :: Uni i f a
+    => (i, FG i f a)
+    -> (i, FG i f a)
+    -> Maybe (Int, FG Int f a)
 unify (_i, f) (_j, g) = reIdent <$> J.runJoin
     (fromTwo f g)
     (J.join i j >> J.repr i)
@@ -60,15 +64,15 @@ unifyIO (_i, f) (_j, g) = fmap reIdent <$> J.runJoinIO
 --------------------------------------------------------------------
 
 
--- | A class of ,,substituable'' structures.
-class Traversable t => Subst t p where
-    subst :: p -> t a -> t a -> t a
-
-
-instance Subst [] Int where
-    subst i xs ys =
-        let (ls, rs) = splitAt i ys
-        in  ls ++ xs ++ drop 1 rs
+-- -- | A class of ,,substituable'' structures.
+-- class Traversable t => Subst t p where
+--     subst :: p -> t a -> t a -> t a
+-- 
+-- 
+-- instance Subst [] Int where
+--     subst i xs ys =
+--         let (ls, rs) = splitAt i ys
+--         in  ls ++ xs ++ drop 1 rs
 
 
 --------------------------------------------------------------------
