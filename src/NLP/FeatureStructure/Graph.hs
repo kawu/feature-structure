@@ -17,13 +17,14 @@ module NLP.FeatureStructure.Graph
 
 -- * Utility
 , fromTwo
+, printFG
 ) where
 
 
 import           Prelude hiding (log)
 
 import           Control.Applicative ((<$>))
-import           Control.Monad (forM)
+import           Control.Monad (forM, forM_)
 import           Control.Monad.Identity (Identity, runIdentity)
 import           Control.Monad.Trans.Maybe
 import qualified Control.Monad.State.Strict as S
@@ -117,150 +118,15 @@ mapNodeIDs _ (Frontier x) = Frontier x
 {-# INLINE mapNodeIDs #-}
 
 
--- --------------------------------------------------------------------
--- -- Unification monad
--- --------------------------------------------------------------------
--- 
--- 
--- -- | The state of the unification monad.
--- data UMS i f a = UMS {
---     -- | A sequence of node pairs.
---       umSq  :: Seq (i, i)
---     -- | A feature graph.
---     , umFg  :: FG i f a
---     -- | A disjoint-set covering information about representants.
---     , umDs  :: D.DisjSet i }
--- 
--- 
--- -- | The unification monad transformer.
--- type UMT i f a m b =
---     P.Producer String
---     (MaybeT
---     (S.StateT (UMS i f a) m)) b
--- 
--- 
--- -- -- | The unification monad.
--- -- type UM i f a b = UMT i f a Identity b
--- 
--- 
--- --------------------------------------------------------------------
--- -- Unification class
--- --------------------------------------------------------------------
--- 
--- 
--- class (Show i, Ord i, Show a, Eq a, Show f, Ord f)
---     => Uni i f a where
--- instance (Show i, Ord i, Show a, Eq a, Show f, Ord f)
---     => Uni i f a where
--- 
--- 
--- --------------------------------------------------------------------
--- -- Unification monad: core
--- --------------------------------------------------------------------
--- 
--- 
--- -- | Pop the node pair from the queue.  TODO: By the way, does
--- -- it have to be a queue for the algorithm to be correct?
--- pop :: (Uni i f a, Monad m) => UMT i f a m (Maybe (i, i))
--- pop = do
---     mx <- S.state $ \ums@UMS{..} -> case Seq.viewl umSq of
---         EmptyL  -> (Nothing, ums)
---         x :< sq -> (Just x, ums {umSq = sq})
---     log $ "[pop] " ++ show mx
---     return mx
--- 
--- 
--- -- | Push the node pair into the queue.
--- push :: (Uni i f a, Monad m) => (i, i) -> UMT i f a m ()
--- push x = do
---     log $ "[push] " ++ show x
---     S.modify $ \ums@UMS{..} -> ums {umSq = umSq |> x}
--- 
--- 
--- -- | Return the representant of the given node.
--- -- TODO: It doesn't fail with the `Other`, perhaps we should change that?
--- repr :: (Uni i f a, Monad m) => i -> UMT i f a m i
--- repr x = do
---     y <- D.repr x <$> S.gets umDs
---     log $ "[repr] " ++ show x ++ " -> " ++ show y
---     return y
--- 
--- 
--- -- | Set the representant of the node.
--- mkReprOf :: (Uni i f a, Monad m) => i -> i -> UMT i f a m ()
--- mkReprOf x y = do
---     log $ "[mkReprOf] " ++ show y ++ " -> " ++ show x
---     S.modify $ \ums@UMS{..} ->
---         ums {umDs = D.mkReprOf x y umDs}
--- 
--- 
--- -- | Unification failure.
--- uniFail :: Monad m => UMT i f a m b
--- uniFail = P.lift E.nothing
--- 
--- 
--- -- | Node behind the identifier.
--- node :: (Uni i f a, Monad m) => i -> UMT i f a m (Node i f a)
--- node x = do
---     fg <- S.gets umFg
---     case M.lookup x fg of
---         Just y  -> return y
---         Nothing -> do
---             log $ "ERROR: node " ++ show x ++ " doesn't exist!"
---             uniFail
--- 
--- 
--- -- | Set node under the given identifier.
--- setNode :: (Uni i f a, Monad m) => i -> Node i f a -> UMT i f a m ()
--- setNode i x = do
---     log $ "[setNode] " ++ show i ++ " -> " ++ show x
---     S.modify $ \ums@UMS{..} ->
---         ums {umFg = M.insert i x umFg}
--- 
--- 
--- -- | Remove node under the given identifier.
--- remNode :: (Uni i f a, Monad m) => i -> UMT i f a m ()
--- remNode i = do
---     log $ "[remNode] " ++ show i
---     S.modify $ \ums@UMS{..} ->
---         ums {umFg = M.delete i umFg}
--- 
--- 
--- --------------------------------------------------------------------
--- -- Unification monad: advanced
--- --------------------------------------------------------------------
--- 
--- 
--- -- -- | Pop next pair of distinct nodes from the queue.
--- -- popNext :: (Ord i, Show i, Monad m) => UMT i f a m (Maybe (i, i))
--- -- popNext = whileM (fmap not . isEmptyQ) tryPop
--- 
--- 
--- -- | Top of the queue, failure.
--- data Fail
---     = Equal -- ^ Top values are not distinct
---     | Empty -- ^ Queue is empty
--- 
--- 
--- -- | Pop next pair of nodes from the queue.  If the nodes are
--- -- not distinct, return `Nothing`.
--- popNext :: (Uni i f a, Monad m) => UMT i f a m (Either Fail (i, i))
--- popNext = E.runEitherT $ do
---     (i0, j0) <- E.tryJust Empty =<< S.lift pop
---     i <- S.lift $ repr i0
---     j <- S.lift $ repr j0
---     E.tryAssert Equal $ i /= j
---     return (i, j)
--- 
--- 
--- -- | Run the second monad on the elements acquired from the first monad
--- -- as long as the first monad doesn't return the `Empty` element.
--- whileNotEmpty :: Monad m => (m (Either Fail a)) -> (a -> m ()) -> m ()
--- whileNotEmpty cond m = do
---     mx <- cond
---     case mx of
---         Right x     -> m x >> whileNotEmpty cond m
---         Left Equal  -> whileNotEmpty cond m
---         Left Empty  -> return ()
+--------------------------------------------------------------------
+-- Graph printing
+--------------------------------------------------------------------
 
 
+printFG :: (Show i, Show f, Show a) => FG i f a -> IO ()
+printFG g = forM_ (M.toList g) $ \(i, nd) -> case nd of
+    Frontier x  -> do
+        putStrLn $ "# frontier " ++ show i ++ " => " ++ show x
+    Interior m  -> do
+        putStrLn $ "# interior " ++ show i
+        forM_ (M.toList m) print

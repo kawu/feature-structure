@@ -7,6 +7,7 @@
 module NLP.FeatureStructure.Tree.Tests
 ( love
 , dummy
+, sentR
 ) where
 
 
@@ -114,6 +115,24 @@ dummy = avm $ do
     subcat $ single $ do
         feat "cat" $ name "x" undef
         leaf "case" "acc"
+
+
+--------------------------------------------------------------------
+-- Rules
+--------------------------------------------------------------------
+
+
+sentR =
+    [ avm $ do
+        leaf "cat" "s"
+    , avm $ do
+        leaf "cat" "np"
+        feat "num" $ name "?num" undef
+        nominative
+    , avm $ do
+        verb
+        feat "num" $ name "?num" undef
+        subcat [] ]
 
 
 --------------------------------------------------------------------
