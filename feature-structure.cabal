@@ -30,12 +30,12 @@ library
 
     exposed-modules:
         NLP.FeatureStructure.Core
-      , NLP.FeatureStructure.Tree
-      -- , NLP.FeatureStructure.Tree.Tests
+--       , NLP.FeatureStructure.Tree
+--       -- , NLP.FeatureStructure.Tree.Tests
       , NLP.FeatureStructure.Graph
-      , NLP.FeatureStructure.Join
-      , NLP.FeatureStructure.Unify
-      -- , NLP.FeatureStructure.Unify.Tests
+--       , NLP.FeatureStructure.Join
+--       , NLP.FeatureStructure.Unify
+--       -- , NLP.FeatureStructure.Unify.Tests
 
     other-modules:
         NLP.FeatureStructure.DisjSet

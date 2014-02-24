@@ -80,6 +80,7 @@ data FN i f a = FN {
 
 
 -- | A feature forest.
+-- NOTE: a term "parse forest" has a different meaning w.r.t. parsing.
 type FF i f a = [FN i f a]
 
 

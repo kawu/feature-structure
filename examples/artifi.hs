@@ -10,6 +10,7 @@ import qualified Data.Text as T
 import           NLP.FeatureStructure.Tree
     (avm, leaf, atom, feat, name, undef)
 import qualified NLP.FeatureStructure.Tree as R
+import           NLP.FeatureStructure.Graph (printFG)
 import qualified NLP.FeatureStructure.Graph as G
 import qualified NLP.FeatureStructure.Unify as U
 
@@ -63,7 +64,9 @@ unifyThem :: IO ()
 unifyThem = do
     g1 <- compile f1
     g2 <- compile f2
-    G.printFG $ snd $ fromJust $ U.unify g1 g2
+    case U.unify g1 g2 of
+        Nothing -> putStrLn "don't unify"
+        Just (x, g) -> print x >> printFG g
 
 
 --------------------------------------------------------------------
@@ -73,4 +76,4 @@ unifyThem = do
 
 -- | Subcategorization frame.
 list :: FF -> FN
-list = avm . feat "list" . avm . R.list "first" "rest"
+list = avm . R.list "first" "rest"

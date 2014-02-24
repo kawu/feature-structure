@@ -66,6 +66,15 @@ consume p f =
   where
     doit = do
         J.join (Left $ beforeHead p) (Right $ root f)
+-- consume
+--     :: Rule i f a -> Rule i f a
+--     -> Join i f a (Maybe (Rule i f a))
+-- consume p f = do
+--         (fromTwo (graph p) (graph f))
+--         doit
+--   where
+--     doit = do
+--         J.join (Left $ beforeHead p) (Right $ root f)
 
 
 -- | Head of the rule-before.
