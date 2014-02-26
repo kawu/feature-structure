@@ -13,33 +13,36 @@ module NLP.FeatureStructure.Graph
 -- * Basic types
   Graph (..)
 , Node (..)
+, empty
+, mkGraph
+, clean
 
 -- * Monad
+, GraphT
 , GraphM
+, runGraphT
+, runGraphM
+, getRepr
+, mkReprOf
+, getNode
+, setNode
+, remNode
 
 -- * Utility
--- , fromTwo
--- , printFG
+, fromTwo
+, printGraph
 ) where
 
 
 import           Prelude hiding (log)
 
 import           Control.Applicative ((<$>), (<*>))
-import           Control.Monad (forM, forM_)
-import           Control.Monad.Identity (Identity, runIdentity)
-import           Control.Monad.Trans.Maybe
+import           Control.Monad (forM_)
+import           Control.Monad.Identity (Identity)
 import qualified Control.Monad.State.Strict as S
-import qualified Control.Error as E
-import           Control.Monad.IO.Class (MonadIO, liftIO)
-import qualified Data.Traversable as Tr
-import qualified Pipes as P
 
 import qualified Data.Map.Strict as M
 import qualified Data.IntMap.Strict as I
-import qualified Data.Sequence as Seq
-import           Data.Sequence (Seq, (|>), ViewL(..))
-import qualified Control.Monad.Atom as Atom
 
 
 import           NLP.FeatureStructure.Core
@@ -76,33 +79,76 @@ data Node f a
     deriving (Show, Eq, Ord)
 
 
+-- | An empty graph.
+empty :: Graph f a
+empty = Graph I.empty D.empty
+
+
+-- | Construct graph form an arbitrary list of nodes.
+mkGraph :: [(ID, Node f a)] -> Graph f a
+mkGraph xs = Graph (I.fromList xs) D.empty
+
+
+-- | Clean the graph: replace every identifier with its representant.
+-- As a result, the resultant graph will have an empty `disjSet`.
+clean :: Graph f a -> Graph f a
+clean = error "clean: not implemented yet"
+
+
 --------------------------------------------------------------------
 -- Graph monad
 --------------------------------------------------------------------
 
 
 -- | A feature graph monad transformer. 
-type GraphM f a m b = S.StateT (Graph f a) m b
+type GraphT f a = S.StateT (Graph f a)
+
+
+-- | A feature graph monad (a transformer over Identify monad).
+type GraphM f a = S.StateT (Graph f a) Identity
+
+
+-- | Run the graph monad trasformer.
+runGraphT :: GraphT f a m b -> Graph f a -> m (b, Graph f a)
+runGraphT = S.runStateT
+
+
+-- | Run the graph monad.
+runGraphM :: GraphM f a b -> Graph f a -> (b, Graph f a)
+runGraphM = S.runState
 
 
 --------------------------------------------------------------------
--- Graph monad: low-level interface
+-- Graph monad: interface
 --------------------------------------------------------------------
 
 
 -- | Identify the current representant of the node.
-repr :: (Functor m, Monad m) => ID -> GraphM f a m ID
-repr k = D.repr k <$> S.gets disjSet
+getRepr :: (Functor m, Monad m) => ID -> GraphT f a m ID
+getRepr k = D.repr k <$> S.gets disjSet
 
 
---------------------------------------------------------------------
--- Graph monad: high-level interface
---------------------------------------------------------------------
+-- | Set the representant of the node.
+mkReprOf :: (Monad m) => ID -> ID -> GraphT f a m ()
+mkReprOf x y = S.modify $ \g@Graph{..} ->
+        g {disjSet = D.mkReprOf x y disjSet}
 
 
 -- | Retrieve node hidden behind the given identifier.
-node :: (Functor m, Monad m) => ID -> GraphM f a m (Maybe (Node f a))
-node i = I.lookup <$> repr i <*> S.gets nodeMap
+getNode :: (Functor m, Monad m) => ID -> GraphT f a m (Maybe (Node f a))
+getNode i = I.lookup <$> getRepr i <*> S.gets nodeMap
+
+
+-- | Set node under the given identifier.
+setNode :: Monad m => ID -> Node f a -> GraphT f a m ()
+setNode i x = S.modify $ \g@Graph{..} ->
+    g {nodeMap = I.insert i x nodeMap}
+
+
+-- | Remove node under the given identifier.
+remNode :: Monad m => ID -> GraphT f a m ()
+remNode i = S.modify $ \g@Graph{..} ->
+    g {nodeMap = I.delete i nodeMap}
 
 
 --------------------------------------------------------------------
@@ -110,12 +156,12 @@ node i = I.lookup <$> repr i <*> S.gets nodeMap
 --------------------------------------------------------------------
 
 
--- -- | Join two feature graphs.  We assume, that identifiers
--- -- in the graphs are disjoint.
--- fromTwo :: Ord i => FG i f a -> FG i f a -> FG (Either i i) f a
--- fromTwo f g = FG
---     { nodeMap   = I.union (nodeMap f) (nodeMap g)
---     , disjSet   = D.union (disjSet f) (disjSet g) }
+-- | Join two feature graphs.  We assume, that identifiers
+-- in the graphs are disjoint.
+fromTwo :: Graph f a -> Graph f a -> Graph f a
+fromTwo f g = Graph
+    { nodeMap   = I.union (nodeMap f) (nodeMap g)
+    , disjSet   = D.union (disjSet f) (disjSet g) }
 
 
 -- -- | Join two feature graphs.  Nodes from the first graph will be
@@ -140,15 +186,30 @@ node i = I.lookup <$> repr i <*> S.gets nodeMap
 -- {-# INLINE mapNodeIDs #-}
 
 
--- --------------------------------------------------------------------
--- -- Graph printing
--- --------------------------------------------------------------------
--- 
--- 
--- printFG :: (Show i, Show f, Show a) => FG i f a -> IO ()
--- printFG g = forM_ (M.toList g) $ \(i, nd) -> case nd of
---     Frontier x  -> do
---         putStrLn $ "# frontier " ++ show i ++ " => " ++ show x
---     Interior m  -> do
---         putStrLn $ "# interior " ++ show i
---         forM_ (M.toList m) print
+--------------------------------------------------------------------
+-- Graph printing
+--------------------------------------------------------------------
+
+
+-- | Print information about the graph into stdout.
+printGraph :: (Show f, Show a) => Graph f a -> IO ()
+printGraph Graph{..} = do
+    putStrLn "# node map"
+    forM_ (I.toList nodeMap) $ \(i, nd) -> case nd of
+        Frontier x  -> do
+            putStrLn $ "# frontier " ++ show i ++ " => " ++ show x
+        Interior m  -> do
+            putStrLn $ "# interior " ++ show i
+            forM_ (M.toList m) print
+    putStrLn "# disjoint-set"
+    D.printDisjSet disjSet
+
+
+--------------------------------------------------------------------
+-- Misc
+--------------------------------------------------------------------
+
+
+-- swap :: (a, b) -> (b, a)
+-- swap (x, y) = (y, x)
+-- {-# INLINE swap #-}
