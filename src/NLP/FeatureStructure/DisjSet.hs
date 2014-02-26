@@ -11,6 +11,7 @@ import qualified Data.Map.Strict as M
 
 -- | A naive implementation of a disjoint set.
 newtype DisjSet a = DisjSet (M.Map a a)
+    deriving (Show, Eq, Ord)
 
 
 -- | An empty disjoint set.
