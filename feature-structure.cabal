@@ -39,6 +39,7 @@ library
 
     other-modules:
         NLP.FeatureStructure.DisjSet
+      , NLP.FeatureStructure.Ident
 
     ghc-options: -Wall -O2
 

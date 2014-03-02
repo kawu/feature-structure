@@ -3,31 +3,33 @@
 
 module NLP.FeatureStructure.Unify.Tests
 ( test1
--- , test2
--- , test2v2
--- , test3
--- , test4
--- , test4v2
--- , test5
--- , test5v2
--- , test6
--- , test6v2
+, test2
+, test2v2
+, test3
+, test4
+, test4v2
+, test5
+, test5v2
+, test6
 ) where
 
 
+import           Control.Applicative ((<$>), (<*>))
+import           Control.Monad.IO.Class (liftIO)
 import qualified Data.Map.Strict as M
 
 
 import           NLP.FeatureStructure.Graph
-import           NLP.FeatureStructure.Atom
+import           NLP.FeatureStructure.Ident
 import           NLP.FeatureStructure.Unify
 
 
 test1 :: IO ()
-test1 = runAtomT $ do
-    f1' <- (,) <$> rid 1 <$> ridGraph f1
-    f2' <- (,) <$> rid 1 <$> ridGraph f1
-    -- print $ unify (1, f1) (1, f2)
+test1 = runIdentT $ do
+    g1 <- (,) <$> rid 1 <*> ridGraph f1
+    split
+    g2 <- (,) <$> rid 1 <*> ridGraph f2
+    liftIO $ print $ unify g1 g2
   where
     f1 = mkGraph
         [ (1, Interior $ M.fromList
@@ -40,136 +42,153 @@ test1 = runAtomT $ do
         , (3, Frontier 'y') ]
 
 
--- test2 :: IO ()
--- test2 = do
---     print $ unifyIO (1 :: Int, f1) (1, f2)
---   where
---     f1 = M.fromList
---         [(1, Interior $ M.fromList [('a', 1)])]
---     f2 = M.fromList
---         [ (1, Interior $ M.fromList [('a', 2)])
---         , (2, Frontier 'x') ]
--- 
--- 
--- test2v2 :: IO ()
--- test2v2 = do
---     print =<< unifyIO (1 :: Int, f1) (1, f2)
---   where
---     f1 :: FG Int Char ()
---     f1 = M.fromList
---         [(1, Interior $ M.fromList [('a', 1)])]
---     f2 = M.fromList
---         [ (1, Interior $ M.fromList [('a', 2)])
---         , (2, Interior M.empty) ]
--- 
--- 
--- test3 :: IO ()
--- test3 = do
---     print =<< unifyIO (1 :: Int, f1) (1, f2)
---   where
---     f1 :: FG Int Char ()
---     f1 = M.fromList
---         [(1, Interior $ M.fromList [('a', 1)])]
---     f2 = M.fromList
---         [(1, Interior $ M.fromList [('a', 1)])]
--- 
--- 
--- test4 :: IO ()
--- test4 = do
---     print =<< unifyIO (1 :: Int, f1) (1, f2)
---   where
---     f1 = M.fromList
---         [ (1, Interior $ M.fromList
---             [('a', 2), ('b', 2), ('c', 3)])
---         , (2, Frontier 'x')
---         , (3, Frontier 'y') ]
---     f2 = M.fromList
---         [ (1, Interior $ M.fromList
---             [('a', 2), ('b', 3), ('c', 3)])
---         , (2, Frontier 'x')
---         , (3, Frontier 'y') ]
--- 
--- 
--- test4v2 :: IO ()
--- test4v2 = do
---     print =<< unifyIO (1 :: Int, f1) (1, f2)
---   where
---     f1 = M.fromList
---         [ (1, Interior $ M.fromList
---             [('a', 2), ('b', 2), ('c', 3)])
---         , (2, Frontier 'x')
---         , (3, Frontier 'x') ]
---     f2 = M.fromList
---         [ (1, Interior $ M.fromList
---             [('a', 2), ('b', 3), ('c', 3)])
---         , (2, Frontier 'x')
---         , (3, Frontier 'x') ]
--- 
--- 
--- test5 :: IO ()
--- test5 = do
---     print =<< unifyIO (1 :: Int, f1) (1, f2)
---   where
---     f1 = M.fromList
---         [ (1, Interior $ M.fromList
---             [('a', 2), ('b', 2), ('c', 3)])
---         , (2, Frontier 'x')
---         , (3, Interior $ M.fromList [('a', 4)])
---         , (4, Frontier 'x') ]
---     f2 = M.fromList
---         [ (1, Interior $ M.fromList
---             [('a', 2), ('b', 3), ('c', 3)])
---         , (2, Interior $ M.fromList [('a', 4)])
---         , (3, Frontier 'x')
---         , (4, Frontier 'x') ]
--- 
--- 
--- test5v2 :: IO ()
--- test5v2 = do
---     print =<< unifyIO (1, f1) (1, f2)
---   where
---     f1 :: FG Int Char Char
---     f1 = M.fromList
---         [ (1, Interior $ M.fromList
---             [('a', 2), ('b', 2), ('c', 3)])
---         , (2, Interior M.empty)
---         , (3, Interior $ M.fromList [('a', 4)])
---         , (4, Frontier 'x') ]
---     f2 = M.fromList
---         [ (1, Interior $ M.fromList
---             [('a', 2), ('b', 3), ('c', 3)])
---         , (2, Interior $ M.fromList [('a', 4)])
---         , (3, Interior M.empty)
---         , (4, Frontier 'x') ]
--- 
--- 
--- test6 :: IO ()
--- test6 = do
---     print =<< unifyIO (1, f1) (1, f2)
---   where
---     f1 :: FG Int Char Char
---     f1 = M.fromList
---         [ (1, Interior $ M.fromList
---             [('a', 1), ('b', 2)])
---         , (2, Interior $ M.fromList [('a', 3)])
---         , (3, Interior M.empty) ]
---     f2 = M.fromList
---         [ (1, Interior $ M.fromList [('a', 2)])
---         , (2, Interior $ M.fromList
---             [('a', 1), ('b', 2)]) ]
--- 
--- 
--- test6v2 :: IO ()
--- test6v2 = do
---     print $ unify (1, f1) (1, f2)
---   where
---     f1 :: FG Int Char Char
---     f1 = M.fromList
---         [ (1, Interior $ M.fromList
---             [('a', 1), ('b', 2)])
---         , (2, Interior $ M.fromList [('a', 3)])
---         , (3, Interior M.empty) ]
---     f2 = M.fromList
---         [ (1, Interior $ M.fromList [('a', 2)])
---         , (2, Interior $ M.fromList
---             [('a', 1), ('b', 2)]) ]
+test2 :: IO ()
+test2 = runIdentT $ do
+    g1 <- (,) <$> rid 1 <*> ridGraph f1
+    split
+    g2 <- (,) <$> rid 1 <*> ridGraph f2
+    liftIO $ print $ unify g1 g2
+  where
+    f1 = mkGraph
+        [(1, Interior $ M.fromList [('a', 1)])]
+    f2 = mkGraph
+        [ (1, Interior $ M.fromList [('a', 2)])
+        , (2, Frontier 'x') ]
+
+
+test2v2 :: IO ()
+test2v2 = runIdentT $ do
+    g1 <- (,) <$> rid 1 <*> ridGraph f1
+    split
+    g2 <- (,) <$> rid 1 <*> ridGraph f2
+    liftIO $ print $ unify g1 g2
+  where
+    f1 :: Graph Char ()
+    f1 = mkGraph
+        [(1, Interior $ M.fromList [('a', 1)])]
+    f2 = mkGraph
+        [ (1, Interior $ M.fromList [('a', 2)])
+        , (2, Interior M.empty) ]
+
+
+test3 :: IO ()
+test3 = runIdentT $ do
+    g1 <- (,) <$> rid 1 <*> ridGraph f1
+    split
+    g2 <- (,) <$> rid 1 <*> ridGraph f2
+    liftIO $ print $ unify g1 g2
+  where
+    f1 :: Graph Char ()
+    f1 = mkGraph
+        [(1, Interior $ M.fromList [('a', 1)])]
+    f2 = mkGraph
+        [(1, Interior $ M.fromList [('a', 1)])]
+
+
+test4 :: IO ()
+test4 = runIdentT $ do
+    g1 <- (,) <$> rid 1 <*> ridGraph f1
+    split
+    g2 <- (,) <$> rid 1 <*> ridGraph f2
+    liftIO $ print $ unify g1 g2
+  where
+    f1 = mkGraph
+        [ (1, Interior $ M.fromList
+            [('a', 2), ('b', 2), ('c', 3)])
+        , (2, Frontier 'x')
+        , (3, Frontier 'y') ]
+    f2 = mkGraph
+        [ (1, Interior $ M.fromList
+            [('a', 2), ('b', 3), ('c', 3)])
+        , (2, Frontier 'x')
+        , (3, Frontier 'y') ]
+
+
+test4v2 :: IO ()
+test4v2 = runIdentT $ do
+    g1 <- (,) <$> rid 1 <*> ridGraph f1
+    split
+    g2 <- (,) <$> rid 1 <*> ridGraph f2
+    liftIO $ do
+        putStrLn "f1: "
+        printGraph $ snd g1
+        putStrLn "f2: "
+        printGraph $ snd g2
+        case unify g1 g2 of
+            Nothing -> putStrLn "unification failed"
+            Just g3 -> do
+                putStrLn "unification result:"
+                printGraph g3
+  where
+    f1 = mkGraph
+        [ (1, Interior $ M.fromList
+            [('a', 2), ('b', 2), ('c', 3)])
+        , (2, Frontier 'x')
+        , (3, Frontier 'x') ]
+    f2 = mkGraph
+        [ (1, Interior $ M.fromList
+            [('a', 2), ('b', 3), ('c', 3)])
+        , (2, Frontier 'x')
+        , (3, Frontier 'x') ]
+
+
+test5 :: IO ()
+test5 = runIdentT $ do
+    g1 <- (,) <$> rid 1 <*> ridGraph f1
+    split
+    g2 <- (,) <$> rid 1 <*> ridGraph f2
+    liftIO $ print $ unify g1 g2
+  where
+    f1 = mkGraph
+        [ (1, Interior $ M.fromList
+            [('a', 2), ('b', 2), ('c', 3)])
+        , (2, Frontier 'x')
+        , (3, Interior $ M.fromList [('a', 4)])
+        , (4, Frontier 'x') ]
+    f2 = mkGraph
+        [ (1, Interior $ M.fromList
+            [('a', 2), ('b', 3), ('c', 3)])
+        , (2, Interior $ M.fromList [('a', 4)])
+        , (3, Frontier 'x')
+        , (4, Frontier 'x') ]
+
+
+test5v2 :: IO ()
+test5v2 = runIdentT $ do
+    g1 <- (,) <$> rid 1 <*> ridGraph f1
+    split
+    g2 <- (,) <$> rid 1 <*> ridGraph f2
+    liftIO $ print $ unify g1 g2
+  where
+    f1 :: Graph Char Char
+    f1 = mkGraph
+        [ (1, Interior $ M.fromList
+            [('a', 2), ('b', 2), ('c', 3)])
+        , (2, Interior M.empty)
+        , (3, Interior $ M.fromList [('a', 4)])
+        , (4, Frontier 'x') ]
+    f2 = mkGraph
+        [ (1, Interior $ M.fromList
+            [('a', 2), ('b', 3), ('c', 3)])
+        , (2, Interior $ M.fromList [('a', 4)])
+        , (3, Interior M.empty)
+        , (4, Frontier 'x') ]
+
+
+test6 :: IO ()
+test6 = runIdentT $ do
+    g1 <- (,) <$> rid 1 <*> ridGraph f1
+    split
+    g2 <- (,) <$> rid 1 <*> ridGraph f2
+    liftIO $ print $ unify g1 g2
+  where
+    f1 :: Graph Char Char
+    f1 = mkGraph
+        [ (1, Interior $ M.fromList
+            [('a', 1), ('b', 2)])
+        , (2, Interior $ M.fromList [('a', 3)])
+        , (3, Interior M.empty) ]
+    f2 = mkGraph
+        [ (1, Interior $ M.fromList [('a', 2)])
+        , (2, Interior $ M.fromList
+            [('a', 1), ('b', 2)]) ]

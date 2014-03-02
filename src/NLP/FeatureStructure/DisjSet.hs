@@ -33,6 +33,8 @@ empty = DisjSet M.empty
 
 
 -- | Construct disjoint-set from the list of pairs.
+-- The function doesn't check, if the list is well-formed,
+-- i.e. represents a valid disjoint-set.
 fromList :: Ord a => [(a, a)] -> DisjSet a
 fromList = DisjSet . M.fromList
 
