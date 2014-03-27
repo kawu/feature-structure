@@ -36,10 +36,10 @@ library
       , NLP.FeatureStructure.Join
       , NLP.FeatureStructure.Unify
       , NLP.FeatureStructure.Unify.Tests
+      , NLP.FeatureStructure.Reid
 
     other-modules:
         NLP.FeatureStructure.DisjSet
-      , NLP.FeatureStructure.Ident
 
     ghc-options: -Wall -O2
 

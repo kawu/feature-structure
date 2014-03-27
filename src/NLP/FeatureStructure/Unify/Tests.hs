@@ -20,16 +20,16 @@ import qualified Data.Map.Strict as M
 
 
 import           NLP.FeatureStructure.Graph
-import           NLP.FeatureStructure.Ident
+import           NLP.FeatureStructure.Reid
 import           NLP.FeatureStructure.Unify
 
 
-test1 :: IO ()
-test1 = runIdentT $ do
-    g1 <- (,) <$> rid 1 <*> ridGraph f1
+test1 :: Maybe (Graph Char Char)
+test1 = runReid $ do
+    g1 <- (,) <$> reid 1 <*> reidGraph f1
     split
-    g2 <- (,) <$> rid 1 <*> ridGraph f2
-    liftIO $ print $ unify g1 g2
+    g2 <- (,) <$> reid 1 <*> reidGraph f2
+    return $ unify g1 g2
   where
     f1 = mkGraph
         [ (1, Interior $ M.fromList
@@ -42,12 +42,12 @@ test1 = runIdentT $ do
         , (3, Frontier 'y') ]
 
 
-test2 :: IO ()
-test2 = runIdentT $ do
-    g1 <- (,) <$> rid 1 <*> ridGraph f1
+test2 :: Maybe (Graph Char Char)
+test2 = runReid $ do
+    g1 <- (,) <$> reid 1 <*> reidGraph f1
     split
-    g2 <- (,) <$> rid 1 <*> ridGraph f2
-    liftIO $ print $ unify g1 g2
+    g2 <- (,) <$> reid 1 <*> reidGraph f2
+    return $ unify g1 g2
   where
     f1 = mkGraph
         [(1, Interior $ M.fromList [('a', 1)])]
@@ -56,14 +56,13 @@ test2 = runIdentT $ do
         , (2, Frontier 'x') ]
 
 
-test2v2 :: IO ()
-test2v2 = runIdentT $ do
-    g1 <- (,) <$> rid 1 <*> ridGraph f1
+test2v2 :: Maybe (Graph Char ())
+test2v2 = runReid $ do
+    g1 <- (,) <$> reid 1 <*> reidGraph f1
     split
-    g2 <- (,) <$> rid 1 <*> ridGraph f2
-    liftIO $ print $ unify g1 g2
+    g2 <- (,) <$> reid 1 <*> reidGraph f2
+    return $ unify g1 g2
   where
-    f1 :: Graph Char ()
     f1 = mkGraph
         [(1, Interior $ M.fromList [('a', 1)])]
     f2 = mkGraph
@@ -71,26 +70,25 @@ test2v2 = runIdentT $ do
         , (2, Interior M.empty) ]
 
 
-test3 :: IO ()
-test3 = runIdentT $ do
-    g1 <- (,) <$> rid 1 <*> ridGraph f1
+test3 :: Maybe (Graph Char ())
+test3 = runReid $ do
+    g1 <- (,) <$> reid 1 <*> reidGraph f1
     split
-    g2 <- (,) <$> rid 1 <*> ridGraph f2
-    liftIO $ print $ unify g1 g2
+    g2 <- (,) <$> reid 1 <*> reidGraph f2
+    return $ unify g1 g2
   where
-    f1 :: Graph Char ()
     f1 = mkGraph
         [(1, Interior $ M.fromList [('a', 1)])]
     f2 = mkGraph
         [(1, Interior $ M.fromList [('a', 1)])]
 
 
-test4 :: IO ()
-test4 = runIdentT $ do
-    g1 <- (,) <$> rid 1 <*> ridGraph f1
+test4 :: Maybe (Graph Char Char)
+test4 = runReid $ do
+    g1 <- (,) <$> reid 1 <*> reidGraph f1
     split
-    g2 <- (,) <$> rid 1 <*> ridGraph f2
-    liftIO $ print $ unify g1 g2
+    g2 <- (,) <$> reid 1 <*> reidGraph f2
+    return $ unify g1 g2
   where
     f1 = mkGraph
         [ (1, Interior $ M.fromList
@@ -105,10 +103,10 @@ test4 = runIdentT $ do
 
 
 test4v2 :: IO ()
-test4v2 = runIdentT $ do
-    g1 <- (,) <$> rid 1 <*> ridGraph f1
+test4v2 = runReidT $ do
+    g1 <- (,) <$> reid 1 <*> reidGraph f1
     split
-    g2 <- (,) <$> rid 1 <*> ridGraph f2
+    g2 <- (,) <$> reid 1 <*> reidGraph f2
     liftIO $ do
         putStrLn "f1: "
         printGraph $ snd g1
@@ -118,7 +116,7 @@ test4v2 = runIdentT $ do
             Nothing -> putStrLn "unification failed"
             Just g3 -> do
                 putStrLn "unification result:"
-                printGraph g3
+                printGraph $ clean g3
   where
     f1 = mkGraph
         [ (1, Interior $ M.fromList
@@ -132,12 +130,12 @@ test4v2 = runIdentT $ do
         , (3, Frontier 'x') ]
 
 
-test5 :: IO ()
-test5 = runIdentT $ do
-    g1 <- (,) <$> rid 1 <*> ridGraph f1
+test5 :: Maybe (Graph Char Char)
+test5 = runReid $ do
+    g1 <- (,) <$> reid 1 <*> reidGraph f1
     split
-    g2 <- (,) <$> rid 1 <*> ridGraph f2
-    liftIO $ print $ unify g1 g2
+    g2 <- (,) <$> reid 1 <*> reidGraph f2
+    return $ unify g1 g2
   where
     f1 = mkGraph
         [ (1, Interior $ M.fromList
@@ -153,14 +151,13 @@ test5 = runIdentT $ do
         , (4, Frontier 'x') ]
 
 
-test5v2 :: IO ()
-test5v2 = runIdentT $ do
-    g1 <- (,) <$> rid 1 <*> ridGraph f1
+test5v2 :: Maybe (Graph Char Char)
+test5v2 = runReid $ do
+    g1 <- (,) <$> reid 1 <*> reidGraph f1
     split
-    g2 <- (,) <$> rid 1 <*> ridGraph f2
-    liftIO $ print $ unify g1 g2
+    g2 <- (,) <$> reid 1 <*> reidGraph f2
+    return $ unify g1 g2
   where
-    f1 :: Graph Char Char
     f1 = mkGraph
         [ (1, Interior $ M.fromList
             [('a', 2), ('b', 2), ('c', 3)])
@@ -175,14 +172,13 @@ test5v2 = runIdentT $ do
         , (4, Frontier 'x') ]
 
 
-test6 :: IO ()
-test6 = runIdentT $ do
-    g1 <- (,) <$> rid 1 <*> ridGraph f1
+test6 :: Maybe (Graph Char Char)
+test6 = runReid $ do
+    g1 <- (,) <$> reid 1 <*> reidGraph f1
     split
-    g2 <- (,) <$> rid 1 <*> ridGraph f2
-    liftIO $ print $ unify g1 g2
+    g2 <- (,) <$> reid 1 <*> reidGraph f2
+    return $ unify g1 g2
   where
-    f1 :: Graph Char Char
     f1 = mkGraph
         [ (1, Interior $ M.fromList
             [('a', 1), ('b', 2)])
@@ -192,3 +188,12 @@ test6 = runIdentT $ do
         [ (1, Interior $ M.fromList [('a', 2)])
         , (2, Interior $ M.fromList
             [('a', 1), ('b', 2)]) ]
+
+
+------------------------------------
+-- Helpers
+------------------------------------
+
+
+-- uni :: Int -> Graph a b -> Int -> Graph a b -> Maybe (Graph a b)
+-- uni i x j y = unify (i, x) (j, y)

@@ -15,7 +15,6 @@ module NLP.FeatureStructure.Graph
 , Node (..)
 , empty
 , mkGraph
-, clean
 
 -- * Monad
 , GraphT
@@ -89,10 +88,14 @@ mkGraph :: [(ID, Node f a)] -> Graph f a
 mkGraph xs = Graph (I.fromList xs) D.empty
 
 
--- | Clean the graph: replace every identifier with its representant.
--- As a result, the resultant graph will have an empty `disjSet`.
-clean :: Graph f a -> Graph f a
-clean = error "clean: not implemented yet"
+-- TODO: Replaced by `Ident.ridGraph`.
+-- -- | Clean the graph: replace every identifier with its representant.
+-- -- As a result, the resultant graph will have an empty `disjSet`.
+-- clean :: Graph f a -> Graph f a
+-- clean = snd . runGraphM $ do
+--     nodeMap' <- mapM cleaNodePair . I.toList
+--         =<< S.gets nodeMap
+--     return $ Graph nodeMap' D.empty
 
 
 --------------------------------------------------------------------
