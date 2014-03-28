@@ -5,12 +5,18 @@
 
 
 module NLP.FeatureStructure.Parse
-(
+( Rule (..)
+, Sent
+, Token
+, parse
 ) where
 
 
+import           Data.Maybe (maybeToList)
 import qualified Data.Tree as T
--- import qualified Data.Set as S
+import qualified Data.Set as S
+import qualified Data.Vector as V
+import qualified Data.MemoCombinators as Memo
 
 
 import           NLP.FeatureStructure.Core
@@ -40,10 +46,14 @@ import qualified NLP.FeatureStructure.Join as J
 -- parsed rule.
 
 
+-- | Be carefull!  An orphan instance...
+instance Ord a => Ord (T.Tree a)
+
+
 -- | A grammar ,,rule''.  It is a generalization of a regular rule.
 -- We should probably change its name to a more appropriate one.
 -- Anyway, it represents a regular rule when its `left` part is empty
--- and, in general, it can be thought as a ,,partially'' parsed rule.
+-- and, in general, it can be thought as a partially proccessed rule.
 data Rule f a = Rule {
     -- | Head of the rule.
       root  :: ID
@@ -54,12 +64,16 @@ data Rule f a = Rule {
     , left  :: T.Forest ID
     -- | Graph corresponding to the rule.
     , graph  :: Graph f a
-    } deriving (Show, Eq)
+    } deriving (Show, Eq, Ord)
 
 
--- | A set of rules.  We cannot use `Set`, because `T.Tree` doesn't
--- have an `Ord` instance for some reason...
-type RuleSet f a = [Rule f a]
+-- | Is it a fully processed rule?
+isFull :: Rule f a -> Bool
+isFull Rule{..} = null right
+
+
+-- | A set of rules.
+type RuleSet f a = S.Set (Rule f a)
 
 
 -- | Move the ,,dot'' in the partially parsed rule by unifying
@@ -115,14 +129,30 @@ shift r@Rule{..} = case right of
 --------------------------------------------------------------------
 
 
--- -- | A recursive definition.
--- parse :: Int -> Int -> RuleSet i f a
--- parse i j = S.fromList
---     [ r
---     | k <- [i .. j - 1]
---     -- Partially processed rules on [i .. k]
---     , p <- partial $ parse i k
---     -- Fully processed rules on [k+1 .. j]
---     , f <- full $ parse (k + 1) j
---     -- Consume and unify
---     , r <- maybeToList $ consume p f ]
+-- | A sentence to be parsed
+type Sent f a = V.Vector (Token f a)
+
+-- A token is a set of lexicon entries (fully processed rules)
+-- identified for a particular input word.
+type Token f a = S.Set (Rule f a)
+
+
+-- | A recursive definition.
+parse :: (Ord a, Ord f) => Sent f a -> Int -> Int -> RuleSet f a
+parse sent = 
+    doit
+  where
+    doit = Memo.memo2 Memo.integral Memo.integral doit'
+    doit' i j
+        | i == j    = sent V.! i
+        | otherwise = S.fromList
+            [ r
+            | k <- [i .. j - 1]
+            -- Partially processed rules on [i .. k]
+            , p <- partial $ doit i k
+            -- Fully processed rules on [k+1 .. j]
+            , f <- full $ doit (k + 1) j
+            -- Consume and unify
+            , r <- maybeToList $ consume p f ]
+    full = filter isFull . S.toList
+    partial = filter (not . isFull) . S.toList
