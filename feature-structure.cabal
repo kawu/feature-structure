@@ -40,6 +40,7 @@ library
       , NLP.FeatureStructure.Unify.Tests
       , NLP.FeatureStructure.Reid
       , NLP.FeatureStructure.Parse
+      , NLP.FeatureStructure.Parse.Tests
 
     other-modules:
         NLP.FeatureStructure.DisjSet

@@ -5,7 +5,14 @@
 
 
 module NLP.FeatureStructure.Parse
-( Rule (..)
+(
+-- * Rule
+  Rule (..)
+, mkRule
+, mkEntry
+, isFull
+
+-- * Parse
 , Sent
 , Token
 , parse
@@ -46,7 +53,7 @@ import qualified NLP.FeatureStructure.Join as J
 -- parsed rule.
 
 
--- | Be carefull!  An orphan instance...
+-- | Beware!  An orphan instance...
 instance Ord a => Ord (T.Tree a)
 
 
@@ -65,6 +72,24 @@ data Rule f a = Rule {
     -- | Graph corresponding to the rule.
     , graph  :: Graph f a
     } deriving (Show, Eq, Ord)
+
+
+-- | A smart rule constructur.
+mkRule :: ID -> [ID] -> Graph f a -> Rule f a
+mkRule x xs g = Rule
+    { root  = x
+    , right = xs
+    , left  = []
+    , graph = g }
+
+
+-- | A smart entry constructur.
+mkEntry :: ID -> Graph f a -> Rule f a
+mkEntry x g = Rule
+    { root  = x
+    , right = []
+    , left  = []
+    , graph = g }
 
 
 -- | Is it a fully processed rule?
@@ -87,7 +112,8 @@ type RuleSet f a = S.Set (Rule f a)
 -- in both the function arguments.
 consume :: (Eq a, Ord f) => Rule f a -> Rule f a -> Maybe (Rule f a)
 consume p f = do
-    (x, p') <- shift p
+    -- x  <- rightHead p
+    (x, p') <- shift p $ left f
     g' <- J.execJoin
         (J.join x (root f))
         (fromTwo (graph p) (graph f))
@@ -105,23 +131,20 @@ consume p f = do
 --         J.join (Left $ beforeHead p) (Right $ root f)
 
 
--- | Head of the rule-before.
--- rightHead :: Rule f a -> ID
+-- -- | Head of the rule-before.
+-- rightHead :: Rule f a -> Maybe ID
 -- rightHead Rule{..} = case right of
---     (x:_) = return x
---     []    = error "rightHead: empty body"
+--     (x:_) -> Just x
+--     []    -> Nothing
 
 
--- | Shift the ,,dot'' of the partially parsed rule.
--- Return the shifted node and the shifted rule.
-shift :: Rule f a -> Maybe (ID, Rule f a)
-shift r@Rule{..} = case right of
+-- | Shift the next right node and link the given children to it.
+shift :: Rule f a -> T.Forest ID -> Maybe (ID, Rule f a)
+shift r@Rule{..} ts = case right of
     (x:xs) -> Just (x, r
-        { left  = mkNode x : left   -- reverse!
+        { left  = T.Node x ts : left   -- reverse!
         , right = xs } )
     [] -> Nothing
-  where
-    mkNode x = T.Node x []
 
 
 --------------------------------------------------------------------

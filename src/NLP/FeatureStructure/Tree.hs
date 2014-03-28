@@ -16,6 +16,7 @@ module NLP.FeatureStructure.Tree
 
 -- * Compile
 , compile
+, compiles
 
 -- * AVM monad
 , AvmM (..)
@@ -39,6 +40,7 @@ import           Control.Monad (forM, forM_)
 import qualified Control.Monad.State.Strict as S
 import qualified Data.Set as Set
 import qualified Data.Map.Strict as M
+import qualified Data.Traversable as T
 
 
 import           NLP.FeatureStructure.Core
@@ -105,50 +107,44 @@ compile x = flip J.runJoin G.empty $ do
     -- First we need to convert a tree to a trivial feature graph
     -- (tree stored as `conR`) and identify nodes which need to be
     -- joined.
-    -- let (r0, st) = S.runState (fromFN x) initConS
     (r0, st) <- S.runStateT (fromFN x) initConS
-
     -- The second step is to join all nodes which have to be
     -- merged based on the identifiers specified by the user.
-    -- flip J.runJoin (G.mkGraph $ conR st) $ do
     forM_ (M.elems $ conI st) $ \ks -> do
         forM_ (adja $ Set.toList ks) $ \(i, j) -> do
             J.join i j
     J.liftGraph $ G.getRepr r0
 
 
--- -- | Compile a traversable structure of named feature trees
--- -- to a graph representation.  The resulting traversable data
--- -- structure will be returned with identifiers in place of
--- -- named feature trees.
--- compileT
---     :: (Monad m, Eq a, Ord f, Traversable t)
---     => t (FN i f a)
---     -> m (Maybe (t ID, G.FG ID f a))
--- compileT t0 = do
---     -- First we need to convert a traversable to a trivial feature
---     -- graph (`conR`) and identify nodes which need to be joined.
---     (t1, st) <- S.runStateT (fromTravFN t0) initConS
---     -- The second step is to join all nodes which have to be
---     -- merged based on the identifiers specified by the user.
---     J.runJoinIO (conR st) $ do
---         forM_ (M.elems $ conI st) $ \ks -> do
---             forM_ (adja $ Set.toList ks) $ \(i, j) -> do
---                 J.join i j
---         T.mapM J.repr t1
+-- | Compile a traversable structure of named feature trees
+-- to a graph representation.  The resulting traversable data
+-- structure will be returned with identifiers in place of
+-- named feature trees.
+compiles
+    :: (Ord i, Eq a, Ord f, T.Traversable t)
+    => t (FN i f a) -> Maybe (t ID, G.Graph f a)
+compiles t0 = flip J.runJoin G.empty $ do
+    -- First we need to convert a traversable to a trivial feature
+    -- graph (`conR`) and identify nodes which need to be joined.
+    (t1, st) <- S.runStateT (fromTravFN t0) initConS
+    -- The second step is to join all nodes which have to be
+    -- merged based on the identifiers specified by the user.
+    forM_ (M.elems $ conI st) $ \ks -> do
+        forM_ (adja $ Set.toList ks) $ \(i, j) -> do
+            J.join i j
+    T.mapM (J.liftGraph . G.getRepr) t1
 
 
 -- | A conversion monad. 
 type Con i f a b = S.StateT (ConS i f a) (J.Join f a) b
 
 
--- -- | Convert the given traversable structure of named feature trees
--- -- to a trivial feature graph.
--- fromTravFN
---     :: (Ord f, Eq a)
---     => t (FN f a)
---     -> Con f a (t ID)
--- fromTravFN = T.mapM fromFN
+-- | Convert the given traversable structure of named feature trees
+-- to a trivial feature graph.
+fromTravFN
+    :: (T.Traversable t, Ord i, Ord f, Eq a)
+    => t (FN i f a) -> Con i f a (t ID)
+fromTravFN = T.mapM fromFN
 
 
 -- | Convert the given named feature tree to a feature graph.
