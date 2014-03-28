@@ -1,3 +1,6 @@
+{-# LANGUAGE RecordWildCards #-}
+
+
 --  | Unification grammar parsing.  A pleliminary effort.
 
 
@@ -7,8 +10,10 @@ module NLP.FeatureStructure.Parse
 
 
 import qualified Data.Tree as T
+-- import qualified Data.Set as S
 
 
+import           NLP.FeatureStructure.Core
 import           NLP.FeatureStructure.Graph
 import qualified NLP.FeatureStructure.Join as J
 
@@ -35,37 +40,46 @@ import qualified NLP.FeatureStructure.Join as J
 -- parsed rule.
 
 
--- | A grammar rule.
-data Rule i f a = Rule {
+-- | A grammar ,,rule''.  It is a generalization of a regular rule.
+-- We should probably change its name to a more appropriate one.
+-- Anyway, it represents a regular rule when its `left` part is empty
+-- and, in general, it can be thought as a ,,partially'' parsed rule.
+data Rule f a = Rule {
     -- | Head of the rule.
-      root   :: i
-    -- | Part of the rule to be parsed.
-    , before :: [i]
-    -- | Part of the rule already parsed.
-    , after  :: T.Forest i
+      root  :: ID
+    -- | Right part of the rule, to be parsed.
+    , right :: [ID]
+    -- | Left part of the rule, already parsed.
+    -- Given in a reverse direction.
+    , left  :: T.Forest ID
     -- | Graph corresponding to the rule.
-    , graph  :: FG i f a
-    } deriving (Show, Eq, Ord)
+    , graph  :: Graph f a
+    } deriving (Show, Eq)
 
 
--- | Set of rules.
-data RuleSet i f a = S.Set (Rule i f a)
+-- | A set of rules.  We cannot use `Set`, because `T.Tree` doesn't
+-- have an `Ord` instance for some reason...
+type RuleSet f a = [Rule f a]
 
 
--- | Move the "dot" in the partially parsed rule by unifying
--- the next `before` node with the fully parsed rule.
+-- | Move the ,,dot'' in the partially parsed rule by unifying
+-- the next `right` node with the *fully* parsed rule.
 --
 -- It is not checked, if the second argument is indeed fully
 -- parsed.  On the other hand, when the first one is fully
 -- parsed, the function will crash.
-consume :: Rule i f a -> Rule i f a -> Maybe (Rule i f a)
-consume p f =
-    fst <$> J.runJoin
+--
+-- We also assume, that the sets of identifiers are disjoint
+-- in both the function arguments.
+consume :: (Eq a, Ord f) => Rule f a -> Rule f a -> Maybe (Rule f a)
+consume p f = do
+    (x, p') <- shift p
+    g' <- J.execJoin
+        (J.join x (root f))
         (fromTwo (graph p) (graph f))
-        doit
-  where
-    doit = do
-        J.join (Left $ beforeHead p) (Right $ root f)
+    return $ p' { graph = g' }
+        
+
 -- consume
 --     :: Rule i f a -> Rule i f a
 --     -> Join i f a (Maybe (Rule i f a))
@@ -78,10 +92,22 @@ consume p f =
 
 
 -- | Head of the rule-before.
-beforeHead :: Rule i f a -> i
-beforeHead Rule{..} = case before of
-    (x:_) = return x
-    []    = error "bodyHead: empty body"
+-- rightHead :: Rule f a -> ID
+-- rightHead Rule{..} = case right of
+--     (x:_) = return x
+--     []    = error "rightHead: empty body"
+
+
+-- | Shift the ,,dot'' of the partially parsed rule.
+-- Return the shifted node and the shifted rule.
+shift :: Rule f a -> Maybe (ID, Rule f a)
+shift r@Rule{..} = case right of
+    (x:xs) -> Just (x, r
+        { left  = mkNode x : left   -- reverse!
+        , right = xs } )
+    [] -> Nothing
+  where
+    mkNode x = T.Node x []
 
 
 --------------------------------------------------------------------
@@ -89,14 +115,14 @@ beforeHead Rule{..} = case before of
 --------------------------------------------------------------------
 
 
--- | A recursive definition.
-parse :: Int -> Int -> RuleSet i f a
-parse i j = S.fromList
-    [ r
-    | k <- [i .. j - 1]
-    -- Partially processed rules on [i .. k]
-    , p <- partial $ parse i k
-    -- Fully processed rules on [k+1 .. j]
-    , f <- full $ parse (k + 1) j
-    -- Consume and unify
-    , r <- maybeToList $ consume p f ]
+-- -- | A recursive definition.
+-- parse :: Int -> Int -> RuleSet i f a
+-- parse i j = S.fromList
+--     [ r
+--     | k <- [i .. j - 1]
+--     -- Partially processed rules on [i .. k]
+--     , p <- partial $ parse i k
+--     -- Fully processed rules on [k+1 .. j]
+--     , f <- full $ parse (k + 1) j
+--     -- Consume and unify
+--     , r <- maybeToList $ consume p f ]

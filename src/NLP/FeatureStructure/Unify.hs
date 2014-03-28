@@ -31,7 +31,7 @@ unify
     => (ID, Graph f a)
     -> (ID, Graph f a)
     -> Maybe (Graph f a)
-unify (i, f) (j, g) = J.evalJoin
+unify (i, f) (j, g) = J.execJoin
     (J.join i j)
     (fromTwo f g)
 

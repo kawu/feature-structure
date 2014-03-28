@@ -12,6 +12,8 @@ module NLP.FeatureStructure.Join
 , Join
 , runJoinT
 , runJoin
+, execJoinT
+, execJoin
 , evalJoinT
 , evalJoin
 
@@ -78,15 +80,27 @@ runJoin :: Join f a b -> Graph f a -> Maybe (b, Graph f a)
 runJoin m = runIdentity . runJoinT m
 
 
--- | Evaluate the `JoinT` computation.
-evalJoinT :: Monad m => JoinT f a m b -> Graph f a -> m (Maybe (Graph f a))
-evalJoinT m g = do
+-- | Execute the `JoinT` computation.
+execJoinT :: Monad m => JoinT f a m b -> Graph f a -> m (Maybe (Graph f a))
+execJoinT m g = do
     x <- runJoinT m g
     return $ snd <$> x
 
 
+-- | Execute the `JoinT` computation.
+execJoin :: Join f a b -> Graph f a -> Maybe (Graph f a)
+execJoin m = runIdentity . execJoinT m
+
+
 -- | Evaluate the `JoinT` computation.
-evalJoin :: Join f a b -> Graph f a -> Maybe (Graph f a)
+evalJoinT :: Monad m => JoinT f a m b -> Graph f a -> m (Maybe b)
+evalJoinT m g = do
+    x <- runJoinT m g
+    return $ fst <$> x
+
+
+-- | Evaluate the `JoinT` computation.
+evalJoin :: Join f a b -> Graph f a -> Maybe b
 evalJoin m = runIdentity . evalJoinT m
 
 
