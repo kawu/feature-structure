@@ -16,6 +16,7 @@ module NLP.FeatureStructure.Join
 , execJoin
 , evalJoinT
 , evalJoin
+, liftGraph
 
 -- * Joining nodes
 , join

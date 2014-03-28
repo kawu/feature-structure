@@ -16,9 +16,8 @@ module NLP.FeatureStructure.Tree
 
 -- * Compile
 , compile
-, compileT
 
--- * Convenient syntax
+-- * AVM monad
 , AvmM (..)
 , Avm
 , avm
@@ -38,15 +37,8 @@ module NLP.FeatureStructure.Tree
 -- import           Control.Applicative ((<$>))
 import           Control.Monad (forM, forM_)
 import qualified Control.Monad.State.Strict as S
-import           Control.Monad.IO.Class (MonadIO)
 import qualified Data.Set as Set
 import qualified Data.Map.Strict as M
-import           Data.Traversable (Traversable)
-import qualified Data.Traversable as T
--- import qualified Pipes.Prelude as P
--- import           Pipes
--- import qualified Data.Sequence as Seq
--- import           Data.Sequence (Seq, (|>), ViewL(..))
 
 
 import           NLP.FeatureStructure.Core
@@ -84,86 +76,83 @@ data FN i f a = FN {
 type FF i f a = [FN i f a]
 
 
--- | An identifier.
-type ID = Int
-
-
 --------------------------------------------------------------------
 -- Conversion
 --------------------------------------------------------------------
 
-
--- | Compile a named feature tree to a graph representation.
-compile
-    :: (MonadIO m, Uni i f a) => FN i f a
-    -> m (Maybe (ID, G.FG ID f a))
-compile x = do
-    -- First we need to convert a tree to a trivial feature graph
-    -- (`conR`) and identify nodes which need to be joined.
-    (r0, st) <- S.runStateT (fromFN x) initConS
-    -- The second step is to join all nodes which have to be
-    -- merged based on the identifiers specified by the user.
-    J.runJoinIO (conR st) $ do
-        forM_ (M.elems $ conI st) $ \ks -> do
-            forM_ (adja $ Set.toList ks) $ \(i, j) -> do
-                J.join i j
-        J.repr r0
-
-
--- | Compile a traversable structure of named feature trees
--- to a graph representation.  The resulting traversable data
--- structure will be returned with identifiers in place of
--- named feature trees.
-compileT
-    :: (MonadIO m, Uni i f a, Traversable t)
-    => t (FN i f a)
-    -> m (Maybe (t ID, G.FG ID f a))
-compileT t0 = do
-    -- First we need to convert a traversable to a trivial feature
-    -- graph (`conR`) and identify nodes which need to be joined.
-    (t1, st) <- S.runStateT (fromTravFN t0) initConS
-    -- The second step is to join all nodes which have to be
-    -- merged based on the identifiers specified by the user.
-    J.runJoinIO (conR st) $ do
-        forM_ (M.elems $ conI st) $ \ks -> do
-            forM_ (adja $ Set.toList ks) $ \(i, j) -> do
-                J.join i j
-        T.mapM J.repr t1
-    
 
 -- | A state of the conversion monad.
 data ConS i f a = ConS {
     -- | A counter for producing new identifiers.
       conC  :: Int
     -- | A mapping from old to new identifiers.
-    , conI  :: M.Map i (Set.Set ID)
+    , conI  :: M.Map i (Set.Set ID) }
     -- | The result.
-    , conR  :: G.FG ID f a }
+    -- , conR  :: [(ID, G.Node f a)] }
 
 
 -- | Initial value of the state.
 initConS :: ConS i f a
 initConS = ConS
     { conC  = 1
-    , conI  = M.empty
-    , conR  = M.empty }
+    , conI  = M.empty }
+    -- , conR  = [] }
+
+
+-- | Compile a named feature tree to a graph representation.
+compile :: (Ord i, Eq a, Ord f) => FN i f a -> Maybe (ID, G.Graph f a)
+compile x = flip J.runJoin G.empty $ do
+    -- First we need to convert a tree to a trivial feature graph
+    -- (tree stored as `conR`) and identify nodes which need to be
+    -- joined.
+    -- let (r0, st) = S.runState (fromFN x) initConS
+    (r0, st) <- S.runStateT (fromFN x) initConS
+
+    -- The second step is to join all nodes which have to be
+    -- merged based on the identifiers specified by the user.
+    -- flip J.runJoin (G.mkGraph $ conR st) $ do
+    forM_ (M.elems $ conI st) $ \ks -> do
+        forM_ (adja $ Set.toList ks) $ \(i, j) -> do
+            J.join i j
+    J.liftGraph $ G.getRepr r0
+
+
+-- -- | Compile a traversable structure of named feature trees
+-- -- to a graph representation.  The resulting traversable data
+-- -- structure will be returned with identifiers in place of
+-- -- named feature trees.
+-- compileT
+--     :: (Monad m, Eq a, Ord f, Traversable t)
+--     => t (FN i f a)
+--     -> m (Maybe (t ID, G.FG ID f a))
+-- compileT t0 = do
+--     -- First we need to convert a traversable to a trivial feature
+--     -- graph (`conR`) and identify nodes which need to be joined.
+--     (t1, st) <- S.runStateT (fromTravFN t0) initConS
+--     -- The second step is to join all nodes which have to be
+--     -- merged based on the identifiers specified by the user.
+--     J.runJoinIO (conR st) $ do
+--         forM_ (M.elems $ conI st) $ \ks -> do
+--             forM_ (adja $ Set.toList ks) $ \(i, j) -> do
+--                 J.join i j
+--         T.mapM J.repr t1
 
 
 -- | A conversion monad. 
-type ConM i f a m b = S.StateT (ConS i f a) m b
+type Con i f a b = S.StateT (ConS i f a) (J.Join f a) b
 
 
--- | Convert the given traversable structure of named feature trees
--- to a trivial feature graph.
-fromTravFN
-    :: (Monad m, Uni i f a, Traversable t)
-    => t (FN i f a)
-    -> ConM i f a m (t ID)
-fromTravFN = T.mapM fromFN
+-- -- | Convert the given traversable structure of named feature trees
+-- -- to a trivial feature graph.
+-- fromTravFN
+--     :: (Ord f, Eq a)
+--     => t (FN f a)
+--     -> Con f a (t ID)
+-- fromTravFN = T.mapM fromFN
 
 
 -- | Convert the given named feature tree to a feature graph.
-fromFN :: (Monad m, Uni i f a) => FN i f a -> ConM i f a m ID
+fromFN :: (Ord i, Ord f, Eq a) => FN i f a -> Con i f a ID
 fromFN FN{..} = do
     x <- fromFT val
     justM ide (register x)
@@ -171,7 +160,7 @@ fromFN FN{..} = do
  
 
 -- | Convert the given feature tree to a trivial feature graph.
-fromFT :: (Monad m, Uni i f a) => FT i f a -> ConM i f a m ID
+fromFT :: (Ord i, Ord f, Eq a) => FT i f a -> Con i f a ID
 fromFT (Subs x) = fromAV x
 fromFT (Atom x) = do
     i <- newID
@@ -182,7 +171,7 @@ fromFT (Atom x) = do
 -- | Convert the given tree to a trivial feature graph.
 -- The result (`conI` and `conR`) will be represented
 -- within the state of the monad.
-fromAV :: (Monad m, Uni i f a) => AV i f a -> ConM i f a m ID
+fromAV :: (Ord i, Ord f, Eq a) => AV i f a -> Con i f a ID
 fromAV fs = do
     i  <- newID
     xs <- forM (M.toList fs) (secondM fromFN)
@@ -191,7 +180,7 @@ fromAV fs = do
 
 
 -- | Register the relation between the new and the old identifier.
-register :: (Monad m, Uni i f a) => ID -> i -> ConM i f a m ()
+register :: (Ord i, Ord f, Eq a) => ID -> i -> Con i f a ()
 register i j = S.modify $ \st@ConS{..} ->
     let conI' = M.alter (addKey i) j conI
     in  st { conI = conI' }
@@ -201,15 +190,16 @@ register i j = S.modify $ \st@ConS{..} ->
 
 
 -- | New identifier.
-newID :: Monad m => ConM i f a m ID
+newID :: Con i f a ID
 newID = S.state $ \st@ConS{..} ->
     (conC, st {conC=conC+1})
 
 
 -- | Add node.
-addNode :: Monad m => ID -> G.Node ID f a -> ConM i f a m ()
-addNode x y = S.modify $ \st@ConS{..} ->
-    st {conR = M.insert x y conR}
+addNode :: ID -> G.Node f a -> Con i f a ()
+addNode i = S.lift . J.liftGraph . G.setNode i
+-- addNode x y = S.modify $ \st@ConS{..} ->
+--     st {conR = (x, y) : conR}
 
 
 --------------------------------------------------------------------
