@@ -7,9 +7,13 @@ module NLP.FeatureStructure.Parse.Tests
 
 -- ** Verbs
   sleepL
+, sleepsL
 , loveL
+, lovesL
+, eatL
 , eatsL
 , tellL
+, tellsL
 
 -- ** Other
 , lambL
@@ -23,12 +27,11 @@ module NLP.FeatureStructure.Parse.Tests
 
 
 -- * Rules
-, ruleSet
-, nounPhraseR
+-- , ruleSet
 
 
 -- * Parsing
-, reidData
+-- , reidData
 , parse
 ) where
 
@@ -66,7 +69,8 @@ type Avm = R.Avm Text Text Text
 
 
 -- | Grammatical class.
-verb, determiner, noun, pronoun, nounPhrase, properName :: Avm
+sent, verb, determiner, noun, pronoun, nounPhrase, properName :: Avm
+sent = leaf "cat" "sent"
 verb = leaf "cat" "v"
 noun = leaf "cat" "n"
 pronoun = leaf "cat" "pron"
@@ -89,7 +93,7 @@ accusative = leaf "case" "acc"
 
 -- | Subcategorization frame.
 subcat :: FF -> Avm
-subcat = feat "subcat" . avm . list "first" "rest"
+subcat = feat "subcat" . list "nil" "first" "rest"
 
 
 -- | A singleton forest.
@@ -120,12 +124,24 @@ sleepL = avm $ do
 
 sleepsL :: FN
 sleepsL = avm $ do
-    verb >> plural
+    verb >> singular
     subcat []
 
 
 loveL :: FN
 loveL = avm $ do
+    verb >> plural
+    subcat $ single $ nounPhrase >> accusative
+
+
+lovesL :: FN
+lovesL = avm $ do
+    verb >> singular
+    subcat $ single $ nounPhrase >> accusative
+
+
+eatL :: FN
+eatL = avm $ do
     verb >> plural
     subcat $ single $ nounPhrase >> accusative
 
@@ -141,7 +157,15 @@ tellL = avm $ do
     verb >> plural
     subcat
         [ avm $ nounPhrase >> accusative
-        , avm $ leaf "cat" "sent" ]
+        , avm sent ]
+
+
+tellsL :: FN
+tellsL = avm $ do
+    verb >> singular
+    subcat
+        [ avm $ nounPhrase >> accusative
+        , avm sent ]
 
 
 --------------------------------------------------------------------
@@ -224,18 +248,34 @@ subcatR = unjust "subcatR" $ do
 
 
 -- | NP -> D + N
-nounPhraseR :: P.Rule Text Text
-nounPhraseR = unjust "nounPhraseR" $ do
+npDetNounR :: P.Rule Text Text
+npDetNounR = unjust "npDetNounR" $ do
     (is, g) <- R.compiles
         [ avm $ do
-            leaf "cat" "np"
-            feat "num"  $ name ("?num" :: Text) undef
+            nounPhrase
+            feat "num"  $ name "?num" undef
             feat "case" $ name "?case" undef
         , avm $ do
-            leaf "cat" "d"
+            determiner
             feat "num" $ name "?num" undef
         , avm $ do
-            leaf "cat" "n"
+            noun
+            feat "num" $ name "?num" undef
+            feat "case" $ name "?case" undef ]
+    (rh, rb) <- unCons is
+    return $ P.mkRule rh rb g
+
+
+-- | NP -> Pronoun
+npPronR :: P.Rule Text Text
+npPronR = unjust "npPronR" $ do
+    (is, g) <- R.compiles
+        [ avm $ do
+            nounPhrase
+            feat "num"  $ name "?num" undef
+            feat "case" $ name "?case" undef
+        , avm $ do
+            pronoun
             feat "num" $ name "?num" undef
             feat "case" $ name "?case" undef ]
     (rh, rb) <- unCons is
@@ -244,7 +284,7 @@ nounPhraseR = unjust "nounPhraseR" $ do
 
 -- | All rules of the grammar.
 ruleSet :: [P.Rule Text Text]
-ruleSet = [sentR, nounPhraseR, subcatR]
+ruleSet = [sentR, npDetNounR, npPronR, subcatR]
 
 
 --------------------------------------------------------------------

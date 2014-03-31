@@ -57,7 +57,7 @@ accusative = leaf "cas" "acc"
 
 -- | Subcategorization frame.
 subcat :: FF -> Avm
-subcat = feat "subcat" . avm . list "first" "rest"
+subcat = feat "subcat" . list "nil" "first" "rest"
 
 
 -- At this point it is worth to think about how naming within

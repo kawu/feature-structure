@@ -273,17 +273,34 @@ leaf :: Ord f => f -> a -> Avm i f a
 leaf x = feat x . atom
 
 
--- | A list encoded as a feature structure.
--- The first two arguments correspond to "head" and "tail"
--- features, TODO: odpowiednio.
-list :: Ord f => f -> f -> FF i f a -> Avm i f a
-list i j ff =
+-- -- | A list encoded as a feature structure.
+-- -- The first two arguments correspond to "head" and "tail"
+-- -- features, respectively.
+-- list :: Ord f => f -> f -> FF i f a -> Avm i f a
+-- list i j ff =
+--     doit ff
+--   where
+--     doit (x:xs) = do
+--         feat i x
+--         feat j $ avm $ doit xs
+--     doit [] = return ()
+
+
+-- | A list encoded as a named feature structure.
+list
+    :: Ord f
+    => a            -- ^ An empty list
+    -> f            -- ^ First
+    -> f            -- ^ Rest
+    -> FF i f a     -- ^ The list to encode
+    -> FN i f a
+list nil first rest ff =
     doit ff
   where
-    doit (x:xs) = do
-        feat i x
-        feat j $ avm $ doit xs
-    doit [] = return ()
+    doit (x:xs) = avm $ do
+        feat first x
+        feat rest $ doit xs
+    doit [] = atom nil
 
 
 --------------------------------------------------------------------

@@ -23,7 +23,7 @@ module NLP.FeatureStructure.Reid
 , split
 
 -- * Utilities
-, clean
+-- , clean
 ) where
 
 
@@ -147,9 +147,9 @@ reidRule P.Rule{..} = P.Rule
 --     } deriving (Show, Eq, Ord)
 
 
--- | Clean the graph using the `reidGraph` function.
-clean :: G.Graph f a -> G.Graph f a
-clean = runReid . reidGraph
+-- -- | Clean the graph using the `reidGraph` function.
+-- clean :: G.Graph f a -> G.Graph f a
+-- clean = runReid . reidGraph
 
 
 -- reidGraph :: (Functor m, Monad m) => G.Graph f a -> ReidT m (G.Graph f a)

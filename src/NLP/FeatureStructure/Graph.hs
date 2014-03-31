@@ -15,6 +15,7 @@ module NLP.FeatureStructure.Graph
 , Node (..)
 , empty
 , mkGraph
+, clean
 
 -- * Monad
 , GraphT
@@ -30,6 +31,7 @@ module NLP.FeatureStructure.Graph
 -- * Utility
 , fromTwo
 , printGraph
+, printTree
 ) where
 
 
@@ -40,6 +42,7 @@ import           Control.Monad (forM_)
 import           Control.Monad.Identity (Identity)
 import qualified Control.Monad.State.Strict as S
 
+import qualified Data.Traversable as Tr
 import qualified Data.Map.Strict as M
 import qualified Data.IntMap.Strict as I
 
@@ -88,14 +91,18 @@ mkGraph :: [(ID, Node f a)] -> Graph f a
 mkGraph xs = Graph (I.fromList xs) D.empty
 
 
--- TODO: Replaced by `Ident.ridGraph`.
--- -- | Clean the graph: replace every identifier with its representant.
--- -- As a result, the resultant graph will have an empty `disjSet`.
--- clean :: Graph f a -> Graph f a
--- clean = snd . runGraphM $ do
---     nodeMap' <- mapM cleaNodePair . I.toList
---         =<< S.gets nodeMap
---     return $ Graph nodeMap' D.empty
+-- | Clean the graph: replace every identifier with its representant.
+-- As a result, the resultant graph will have an empty `disjSet`.
+clean :: Graph f a -> Graph f a
+clean g = fst . flip runGraphM g $ do
+    nodeMap' <- mapM cleanPair $ I.toList $ nodeMap g
+    return $ Graph (I.fromList nodeMap') D.empty
+  where
+    cleanPair (i, x) = (,) <$> getRepr i <*> cleanNode x
+    cleanNode (Interior m) = Interior <$> Tr.mapM getRepr m
+    cleanNode (Frontier x) = return $ Frontier x
+    -- cleanSnd (x, i) = (x,) <$> getRepr i
+
 
 
 --------------------------------------------------------------------
@@ -206,6 +213,27 @@ printGraph Graph{..} = do
             forM_ (M.toList m) print
     putStrLn "# disjoint-set"
     D.printDisjSet disjSet
+
+
+-- | Print information about the graph into stdout.  Alternative version.
+printTree :: (Show f, Show a) => Graph f a -> ID -> IO ()
+printTree Graph{..} =
+    -- flip S.runStateT S.empty . doit ""
+    doit ""
+  where
+    doit ind i = case I.lookup (D.repr i disjSet) nodeMap of
+        Nothing -> return ()
+        Just nd -> do
+            putStrLn $ show i ++ " ("
+                ++ show (D.repr i disjSet) ++ ")"
+            case nd of
+                Interior m  -> do
+                    forM_ (M.toList m) $ putFeat ind
+                Frontier y  -> do
+                    putStrLn $ ind ++ " " ++ show y
+    putFeat ind (x, j) = do
+        putStr $ ind ++ "  " ++ show x ++ " -> "
+        doit (ind ++ "    ") j 
 
 
 --------------------------------------------------------------------
