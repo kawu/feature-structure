@@ -160,7 +160,60 @@ type Sent f a = V.Vector (Token f a)
 type Token f a = S.Set (Rule f a)
 
 
--- | A recursive definition.
+-- | A recursive definition with memoization.
+--
+-- = General definition
+--
+-- Let `T = parse sent` for a given sentence `sent`.
+-- We define `T(i, j)` as a set of partially processed rules covering
+-- positions `[i, j)` of the input sentence.  Therefore, the result
+-- of parsing will consists of fully processed rules in
+-- `T(0, length(sent))`.
+-- 
+-- = Recursive definition, first attempt
+--
+-- For a given `k` satisfying `i <= k < j` we consider every partially
+-- processed rule `p` covering `[i, k)` and every fully processed rule
+-- `q` covering `[k, j)`.  If `p` can `consume` `q`, then we add the
+-- resulting rule into the set `T(i, j)`.
+--
+-- Let us note that, within the definition above, for `k = i`, `T(i, j)`
+-- is defined on the basis of `T(i, j)` itself!  This is certainly not
+-- what we want.
+--
+-- = Recursive definition, second attempt
+--
+-- We rule out the case of `k = i`.
+--
+-- For a given `k` satisfying `i < k < j` we consider every partially
+-- processed rule `p` covering `[i, k)` and every fully processed rule
+-- `q` covering `[k, j)`.  If `p` can `consume` `q`, then we add the
+-- resulting rule into the set `T(i, j)`.
+--
+-- Now, to avoid infinite looping, we assume a linear ordering on the
+-- rules `T(i, i)` of the grammar.  Without loss of generality we can
+-- assume that the ordering corresponds to the placement of elements
+-- in the list `T(i, i)`.
+-- We consider extending the `T(i, j)` set with the rule `r` after it has
+-- already been extended with all rules from `T(i, i)` lower then `r`.
+--
+-- TODO: in order to make the method described above work we need
+-- to store lists and not sets in `T(i, i)`.  Otherwise, we cannot
+-- enforce a custom ordering of the grammar rules.
+--
+-- = Input
+--
+-- First we need to populate the `T(i, i)` sets for `0 <= i < length sent`
+-- with reidentified rules of the grammar.
+-- We also need to take the input words into account, of course.
+-- For each position `i` in the sentence we define `T(i, i+1)` as a set
+-- of lexicon entries matching the word on position `i` converted into
+-- the form of fully parsed rules.
+--
+-- Therefore, at the beginning, we have a `T` structure populated with
+-- rules of the grammar (represented as partially parsed rules) and
+-- lexicon entries (represented as fully parsed rules).
+--
 parse :: (Ord a, Ord f) => Sent f a -> Int -> Int -> RuleSet f a
 parse sent = 
     doit
@@ -179,3 +232,24 @@ parse sent =
             , r <- maybeToList $ consume p f ]
     full = filter isFull . S.toList
     partial = filter (not . isFull) . S.toList
+    
+
+-- -- | A recursive definition.
+-- parse :: (Ord a, Ord f) => Sent f a -> Int -> Int -> RuleSet f a
+-- parse sent = 
+--     doit
+--   where
+--     doit = Memo.memo2 Memo.integral Memo.integral doit'
+--     doit' i j
+--         | i == j    = sent V.! i
+--         | otherwise = S.fromList
+--             [ r
+--             | k <- [i .. j - 1]
+--             -- Partially processed rules on [i .. k]
+--             , p <- partial $ doit i k
+--             -- Fully processed rules on [k+1 .. j]
+--             , f <- full $ doit (k + 1) j
+--             -- Consume and unify
+--             , r <- maybeToList $ consume p f ]
+--     full = filter isFull . S.toList
+--     partial = filter (not . isFull) . S.toList
