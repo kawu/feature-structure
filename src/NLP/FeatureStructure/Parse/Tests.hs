@@ -3,11 +3,40 @@
 
 module NLP.FeatureStructure.Parse.Tests
 ( 
+-- * Lexicon
+
+-- ** Verbs
+  sleepL
+, loveL
+, eatsL
+, tellL
+
+-- ** Other
+, lambL
+, lambsL
+, sheL
+, herL
+, rachelL
+, jacobL
+, aL
+, twoL
+
+
+-- * Rules
+, ruleSet
+, nounPhraseR
+
+
+-- * Parsing
+, reidData
+, parse
 ) where
 
 
+import           Control.Monad (forM, replicateM)
 import           Data.Text (Text)
 -- import qualified Data.Text as T
+import qualified Data.Vector as V
 
 
 import           NLP.FeatureStructure.Tree
@@ -15,6 +44,7 @@ import           NLP.FeatureStructure.Tree
 import qualified NLP.FeatureStructure.Tree as R
 import qualified NLP.FeatureStructure.Graph as G
 import qualified NLP.FeatureStructure.Parse as P
+import qualified NLP.FeatureStructure.Reid as Reid
 
 
 --------------------------------------------------------------------
@@ -53,8 +83,8 @@ plural = leaf "num" "pl"
 
 -- | Case.
 nominative, accusative :: Avm
-nominative = leaf "cas" "nom"
-accusative = leaf "cas" "acc"
+nominative = leaf "case" "nom"
+accusative = leaf "case" "acc"
 
 
 -- | Subcategorization frame.
@@ -88,9 +118,21 @@ sleepL = avm $ do
     subcat []
 
 
+sleepsL :: FN
+sleepsL = avm $ do
+    verb >> plural
+    subcat []
+
+
 loveL :: FN
 loveL = avm $ do
     verb >> plural
+    subcat $ single $ nounPhrase >> accusative
+
+
+eatsL :: FN
+eatsL = avm $ do
+    verb >> singular
     subcat $ single $ nounPhrase >> accusative
 
 
@@ -190,7 +232,7 @@ nounPhraseR = unjust "nounPhraseR" $ do
             feat "num"  $ name ("?num" :: Text) undef
             feat "case" $ name "?case" undef
         , avm $ do
-            leaf "cat" "det"
+            leaf "cat" "d"
             feat "num" $ name "?num" undef
         , avm $ do
             leaf "cat" "n"
@@ -200,9 +242,9 @@ nounPhraseR = unjust "nounPhraseR" $ do
     return $ P.mkRule rh rb g
 
 
--- | All rules.
-ruleSet :: P.RuleSet Text Text
-ruleSet [sentR, nounPhraseR, subcatR]
+-- | All rules of the grammar.
+ruleSet :: [P.Rule Text Text]
+ruleSet = [sentR, nounPhraseR, subcatR]
 
 
 --------------------------------------------------------------------
@@ -227,6 +269,43 @@ unCons []     = Nothing
 --------------------------------------------------------------------
 
 
+-- | Reidentify sentence and rules. 
+reidData
+    :: [P.Rule Text Text] -> [FN]
+    -> ([[P.Rule Text Text]], [[P.Rule Text Text]])
+reidData rs ws = Reid.runReid $ do
+    -- Rules
+    rs' <- replicateM (length ws) $ do
+        forM rs $ \x -> do
+            Reid.split
+            Reid.reidRule x
+    -- Words
+    ws' <- forM ws $ \x -> do
+        Reid.split
+        y <- Reid.reidRule $ compileEntry x
+        return [y]
+    return (rs', ws')
+  where
+    -- Compile entry
+    compileEntry fn = unjust ("compileEntry: " ++ show fn) $ do
+        (i, g) <- R.compile fn
+        return $ P.mkEntry i g
+
+
 -- | A simplified parsing function.
-parse :: [FN] -> [P.Rule Text Text]
-parse sent = P.parse (V.fromList sent) 0 (length sent - 1) ruleSet
+parse :: [FN] -> Int -> Int -> [P.Rule Text Text]
+-- parse sent = filter P.isFull $ P.parse
+parse sent = P.parse
+    (V.fromList rulesReided)
+    (V.fromList sentReided)
+    -- 0 (length sent)
+  where
+    -- Reidentified rules and words
+    (rulesReided, sentReided) = reidData ruleSet sent
+
+--     -- Reidentified rules
+--     rulesReided = Reid.runReid . replicateM (length sent) $ do
+--         Reid.split >> mapM Reid.reidRule ruleSet
+--     -- Reidentified sentence
+--     sentReided = map (:[]) . Reid.runReid $ do
+--         mapM (Reid.reidRule . compileEntry) sent

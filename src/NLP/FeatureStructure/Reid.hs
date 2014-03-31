@@ -19,6 +19,7 @@ module NLP.FeatureStructure.Reid
 -- * Monadic functions
 , reid
 , reidGraph
+, reidRule
 , split
 
 -- * Utilities
@@ -37,6 +38,7 @@ import qualified Data.IntMap.Strict as I
 import           NLP.FeatureStructure.Core
 import qualified NLP.FeatureStructure.DisjSet as D
 import qualified NLP.FeatureStructure.Graph as G
+import qualified NLP.FeatureStructure.Parse as P
 
 
 --------------------------------------------------------------------
@@ -122,6 +124,27 @@ reidGraph g = fmap fst . flip G.runGraphT g $ G.Graph
     reidNode (G.Interior m) = fmap G.Interior $ Tr.mapM reidRepr m
     reidNode (G.Frontier x) = return $ G.Frontier x
     reidRepr = S.lift . reid <=< G.getRepr
+
+
+-- | Reidentify the rule.
+reidRule :: (Functor m, Monad m) => P.Rule f a -> ReidT m (P.Rule f a)
+reidRule P.Rule{..} = P.Rule
+    <$> reid root
+    <*> mapM reid right
+    <*> mapM (Tr.mapM reid) left
+    <*> reidGraph graph
+
+-- data Rule f a = Rule {
+--     -- | Head of the rule.
+--       root  :: ID
+--     -- | Right part of the rule, to be parsed.
+--     , right :: [ID]
+--     -- | Left part of the rule, already parsed.
+--     -- Given in a reverse direction.
+--     , left  :: T.Forest ID
+--     -- | Graph corresponding to the rule.
+--     , graph  :: Graph f a
+--     } deriving (Show, Eq, Ord)
 
 
 -- | Clean the graph using the `reidGraph` function.

@@ -16,9 +16,13 @@ module NLP.FeatureStructure.Parse
 , Sent
 , Token
 , parse
+
+-- * Misc
+, consume
 ) where
 
 
+-- import           Control.Monad (guard)
 import           Data.Maybe (maybeToList)
 import qualified Data.Tree as T
 import qualified Data.Set as S
@@ -98,7 +102,7 @@ isFull Rule{..} = null right
 
 
 -- | A set of rules.
-type RuleSet f a = S.Set (Rule f a)
+-- type RuleSet f a = S.Set (Rule f a)
 
 
 -- | Move the ,,dot'' in the partially parsed rule by unifying
@@ -214,24 +218,38 @@ type Token f a = S.Set (Rule f a)
 -- rules of the grammar (represented as partially parsed rules) and
 -- lexicon entries (represented as fully parsed rules).
 --
-parse :: (Ord a, Ord f) => Sent f a -> Int -> Int -> RuleSet f a
-parse sent = 
-    doit
+parse
+    :: (Ord a, Ord f)
+    => V.Vector [Rule f a]  -- ^ Rules of the grammar (reidentified for each position)
+    -> V.Vector [Rule f a]  -- ^ A vector of tokens (reidentified for each position)
+    -> Int -> Int           -- ^ Positions in the sentence
+    -> [Rule f a]           -- ^ List of parses
+parse rules sent = t
+
   where
-    doit = Memo.memo2 Memo.integral Memo.integral doit'
-    doit' i j
-        | i == j    = sent V.! i
-        | otherwise = S.fromList
-            [ r
-            | k <- [i .. j - 1]
-            -- Partially processed rules on [i .. k]
-            , p <- partial $ doit i k
-            -- Fully processed rules on [k+1 .. j]
-            , f <- full $ doit (k + 1) j
+
+    -- The final result
+    t = Memo.memo2 Memo.integral Memo.integral t'
+    t' i j = u (rules V.! i) i j
+
+    -- Introduce new grammar rules
+    u (r:rs) i j = u' ++
+        [ q | f <- u', isFull f
+        , q <- maybeToList (consume r f) ]
+        where u' = u rs i j
+
+    -- Move ,,dot'' in beforehand introduced rules
+    u [] i j
+        | i+1 == j  = sent V.! i
+        | otherwise = -- nub   -- TODO: do we really need `nub` here?
+            [ q
+            | k <- [i+1 .. j-1]
+            -- Partially processed rules on [i .. k)
+            , p <- t i k, not (isFull p)
+            -- Fully processed rules on [k .. j)
+            , f <- t k j, isFull f
             -- Consume and unify
-            , r <- maybeToList $ consume p f ]
-    full = filter isFull . S.toList
-    partial = filter (not . isFull) . S.toList
+            , q <- maybeToList $ consume p f ]
     
 
 -- -- | A recursive definition.
@@ -253,3 +271,14 @@ parse sent =
 --             , r <- maybeToList $ consume p f ]
 --     full = filter isFull . S.toList
 --     partial = filter (not . isFull) . S.toList
+
+
+--------------------------------------------------------------------
+-- Misc
+--------------------------------------------------------------------
+
+
+-- | Remove duplicate elements.  Doesn't preserve the order of the list.
+nub :: Ord a => [a] -> [a]
+nub = S.toList . S.fromList
+{-# INLINE nub #-}
