@@ -19,20 +19,25 @@ module NLP.FeatureStructure.Parse
 
 -- * Misc
 , consume
+, printRule
 ) where
 
 
--- import           Control.Monad (guard)
+import           Control.Applicative (pure, (<$>), (<*>))
+import           Control.Monad (forM, forM_)
 import           Data.Maybe (maybeToList)
 import qualified Data.Tree as T
 import qualified Data.Set as S
+import qualified Data.Map.Strict as M
 import qualified Data.Vector as V
+import qualified Data.Traversable as Tr
 import qualified Data.MemoCombinators as Memo
 
 
 import           NLP.FeatureStructure.Core
 import           NLP.FeatureStructure.Graph
 import qualified NLP.FeatureStructure.Join as J
+import qualified NLP.FeatureStructure.Reid as Reid
 
 
 --------------------------------------------------------------------
@@ -76,6 +81,34 @@ data Rule f a = Rule {
     -- | Graph corresponding to the rule.
     , graph  :: Graph f a
     } deriving (Show, Eq, Ord)
+
+
+-- | Print the rule to stdout.
+printRule :: (Show f, Show a) => Rule f a -> IO ()
+printRule Rule{..} = do
+    putStrLn $ "# root: " ++ show root
+    printTree graph root
+    putStrLn ""
+ 
+    putStrLn "# to be parsed:"
+    forM_ right $ printTree graph
+    putStrLn ""
+
+    putStrLn "# derived forest (reversed):"
+    putStr $ T.drawForest $ map (fmap show) left
+
+    putStrLn "# FGs for the forest:"
+    forM_ left $ Tr.mapM $ printTree graph
+    putStrLn ""
+
+
+-- | Reidentify the rule.
+reidRule :: (Functor m, Monad m) => Rule f a -> Reid.ReidT m (Rule f a)
+reidRule Rule{..} = Rule
+    <$> Reid.reid root
+    <*> mapM Reid.reid right
+    <*> mapM (Tr.mapM Reid.reid) left
+    <*> Reid.reidGraph graph
 
 
 -- | A smart rule constructur.
@@ -218,19 +251,47 @@ type Token f a = S.Set (Rule f a)
 -- rules of the grammar (represented as partially parsed rules) and
 -- lexicon entries (represented as fully parsed rules).
 --
+-- TODO: change grammar and sentence input types.
+--
 parse
     :: (Ord a, Ord f)
-    => V.Vector [Rule f a]  -- ^ Rules of the grammar (reidentified for each position)
-    -> V.Vector [Rule f a]  -- ^ A vector of tokens (reidentified for each position)
-    -> Int -> Int           -- ^ Positions in the sentence
-    -> [Rule f a]           -- ^ List of parses
-parse rules sent = t
+    -- => V.Vector [Rule f a]  -- ^ Rules of the grammar (reidentified)
+    -- -> V.Vector [Rule f a]  -- ^ A vector of tokens (reidentified)
+    => [Rule f a]       -- ^ Grammar rules (to be reid)
+    -> [Rule f a]       -- ^ Sentence (to be reid)
+    -> Int -> Int       -- ^ Positions in the sentence
+    -> [Rule f a]       -- ^ List of parses
+parse rules0 sent0 = t
 
   where
 
+    -- Reidentify rules and sentence
+    (rules, sent) = Reid.runReid $ do
+        -- Rules
+        let ixs =
+                [ (i, j)
+                | i <- [0 .. length sent0]
+                , j <- [i .. length sent0] ]
+        rs' <- forM ixs $ \ij -> do
+            rs <- forM rules0 $ \r -> do
+                Reid.split >> reidRule r
+            return (ij, rs)
+        -- Words
+        ws' <- forM sent0 $ \x -> do
+            Reid.split
+            -- y <- Reid.reidRule $ compileEntry x
+            y <- reidRule x
+            return [y]
+        return (M.fromList rs', V.fromList ws')
+
+--     -- Compile entry
+--     compileEntry fn = unjust ("compileEntry: " ++ show fn) $ do
+--         (i, g) <- R.compile fn
+--         return $ mkEntry i g
+
     -- The final result
     t = Memo.memo2 Memo.integral Memo.integral t'
-    t' i j = u (rules V.! i) i j
+    t' i j = u (rules M.! (i, j)) i j
 
     -- Introduce new grammar rules
     u (r:rs) i j = u' ++

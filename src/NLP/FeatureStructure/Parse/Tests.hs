@@ -33,6 +33,7 @@ module NLP.FeatureStructure.Parse.Tests
 -- * Parsing
 -- , reidData
 , parse
+, parse'
 ) where
 
 
@@ -70,7 +71,7 @@ type Avm = R.Avm Text Text Text
 
 -- | Grammatical class.
 sent, verb, determiner, noun, pronoun, nounPhrase, properName :: Avm
-sent = leaf "cat" "sent"
+sent = leaf "cat" "s"
 verb = leaf "cat" "v"
 noun = leaf "cat" "n"
 pronoun = leaf "cat" "pron"
@@ -266,6 +267,20 @@ npDetNounR = unjust "npDetNounR" $ do
     return $ P.mkRule rh rb g
 
 
+-- | NP -> N (plural)
+npPlNounR :: P.Rule Text Text
+npPlNounR = unjust "npPlNounR" $ do
+    (is, g) <- R.compiles
+        [ avm $ do
+            nounPhrase >> plural
+            feat "case" $ name "?case" undef
+        , avm $ do
+            noun >> plural
+            feat "case" $ name "?case" undef ]
+    (rh, rb) <- unCons is
+    return $ P.mkRule rh rb g
+
+
 -- | NP -> Pronoun
 npPronR :: P.Rule Text Text
 npPronR = unjust "npPronR" $ do
@@ -282,9 +297,25 @@ npPronR = unjust "npPronR" $ do
     return $ P.mkRule rh rb g
 
 
+-- | NP -> Proper name
+npPropNameR :: P.Rule Text Text
+npPropNameR = unjust "npPropNameR" $ do
+    (is, g) <- R.compiles
+        [ avm $ do
+            nounPhrase
+            feat "num"  $ name "?num" undef
+            feat "case" $ name "?case" undef
+        , avm $ do
+            properName
+            feat "num" $ name "?num" undef
+            feat "case" $ name "?case" undef ]
+    (rh, rb) <- unCons is
+    return $ P.mkRule rh rb g
+
+
 -- | All rules of the grammar.
 ruleSet :: [P.Rule Text Text]
-ruleSet = [sentR, npDetNounR, npPronR, subcatR]
+ruleSet = [sentR, npDetNounR, npPlNounR, npPronR, npPropNameR, subcatR]
 
 
 --------------------------------------------------------------------
@@ -309,39 +340,46 @@ unCons []     = Nothing
 --------------------------------------------------------------------
 
 
--- | Reidentify sentence and rules. 
-reidData
-    :: [P.Rule Text Text] -> [FN]
-    -> ([[P.Rule Text Text]], [[P.Rule Text Text]])
-reidData rs ws = Reid.runReid $ do
-    -- Rules
-    rs' <- replicateM (length ws) $ do
-        forM rs $ \x -> do
-            Reid.split
-            Reid.reidRule x
-    -- Words
-    ws' <- forM ws $ \x -> do
-        Reid.split
-        y <- Reid.reidRule $ compileEntry x
-        return [y]
-    return (rs', ws')
-  where
-    -- Compile entry
-    compileEntry fn = unjust ("compileEntry: " ++ show fn) $ do
-        (i, g) <- R.compile fn
-        return $ P.mkEntry i g
+-- -- | Reidentify sentence and rules. 
+-- reidData
+--     :: [P.Rule Text Text] -> [FN]
+--     -> ([[P.Rule Text Text]], [[P.Rule Text Text]])
+-- reidData rs ws = Reid.runReid $ do
+--     -- Rules
+--     rs' <- replicateM (length ws) $ do
+--         forM rs $ \x -> do
+--             Reid.split
+--             Reid.reidRule x
+--     -- Words
+--     ws' <- forM ws $ \x -> do
+--         Reid.split
+--         y <- Reid.reidRule $ compileEntry x
+--         return [y]
+--     return (rs', ws')
+--   where
+--     -- Compile entry
+--     compileEntry fn = unjust ("compileEntry: " ++ show fn) $ do
+--         (i, g) <- R.compile fn
+--         return $ P.mkEntry i g
 
 
 -- | A simplified parsing function.
-parse :: [FN] -> Int -> Int -> [P.Rule Text Text]
+parse :: [FN] -> [P.Rule Text Text]
+parse sent = parse' sent 0 (length sent)
+
+
+-- | A simplified parsing function.
+parse' :: [FN] -> Int -> Int -> [P.Rule Text Text]
 -- parse sent = filter P.isFull $ P.parse
-parse sent = P.parse
-    (V.fromList rulesReided)
-    (V.fromList sentReided)
+parse' sent =
+    P.parse ruleSet (map compileEntry sent)
     -- 0 (length sent)
   where
-    -- Reidentified rules and words
-    (rulesReided, sentReided) = reidData ruleSet sent
+--     -- Reidentified rules and words
+--     (rulesReided, sentReided) = reidData ruleSet sent
+    compileEntry fn = unjust ("compileEntry: " ++ show fn) $ do
+        (i, g) <- R.compile fn
+        return $ P.mkEntry i g
 
 --     -- Reidentified rules
 --     rulesReided = Reid.runReid . replicateM (length sent) $ do
