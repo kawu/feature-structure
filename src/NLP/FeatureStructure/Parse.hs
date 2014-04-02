@@ -23,20 +23,26 @@ module NLP.FeatureStructure.Parse
 ) where
 
 
-import           Control.Applicative (pure, (<$>), (<*>))
-import           Control.Monad (forM, forM_)
+import           Control.Applicative (pure, (<$>), (<*>), (*>))
+import           Control.Monad (forM, forM_, guard, mzero)
+import           Control.Monad.Trans.Class (lift)
 import           Data.Maybe (maybeToList)
 import qualified Data.Tree as T
 import qualified Data.Set as S
 import qualified Data.Map.Strict as M
 import qualified Data.Vector as V
 import qualified Data.Traversable as Tr
-import qualified Data.MemoCombinators as Memo
+-- import qualified Data.MemoCombinators as Memo
+import           Control.Monad.Memo (memo, for2)
+import qualified Control.Monad.Memo as Memo
+import qualified Pipes as Pipes
+import qualified Pipes.Prelude as Pipes
 
 
 import           NLP.FeatureStructure.Core
 import           NLP.FeatureStructure.Graph
 import qualified NLP.FeatureStructure.Join as J
+import           NLP.FeatureStructure.Reid (Reid)
 import qualified NLP.FeatureStructure.Reid as Reid
 
 
@@ -102,13 +108,13 @@ printRule Rule{..} = do
     putStrLn ""
 
 
--- | Reidentify the rule.
-reidRule :: (Functor m, Monad m) => Rule f a -> Reid.ReidT m (Rule f a)
-reidRule Rule{..} = Rule
+-- | `Reid.split` and reidentify the rule.
+ruleInst :: (Functor m, Monad m) => Rule f a -> Reid.ReidT m (Rule f a)
+ruleInst Rule{..} = Reid.split *> ( Rule
     <$> Reid.reid root
     <*> mapM Reid.reid right
     <*> mapM (Tr.mapM Reid.reid) left
-    <*> Reid.reidGraph graph
+    <*> Reid.reidGraph graph )
 
 
 -- | A smart rule constructur.
@@ -255,63 +261,85 @@ type Token f a = S.Set (Rule f a)
 --
 parse
     :: (Ord a, Ord f)
-    -- => V.Vector [Rule f a]  -- ^ Rules of the grammar (reidentified)
-    -- -> V.Vector [Rule f a]  -- ^ A vector of tokens (reidentified)
     => [Rule f a]       -- ^ Grammar rules (to be reid)
     -> [Rule f a]       -- ^ Sentence (to be reid)
     -> Int -> Int       -- ^ Positions in the sentence
-    -> [Rule f a]       -- ^ List of parses
-parse rules0 sent0 = t
+    -> [Rule f a]
+parse rules sent0 mi mj =
+        
+    Reid.runReid $ do
+        sent <- V.fromList . map (:[]) <$> mapM ruleInst sent0
+        Memo.startEvalMemoT $ doit sent mi mj
 
   where
+    doit sent = t
+      where
 
-    -- Reidentify rules and sentence
-    (rules, sent) = Reid.runReid $ do
-        -- Rules
-        let ixs =
-                [ (i, j)
-                | i <- [0 .. length sent0]
-                , j <- [i .. length sent0] ]
-        rs' <- forM ixs $ \ij -> do
-            rs <- forM rules0 $ \r -> do
-                Reid.split >> reidRule r
-            return (ij, rs)
-        -- Words
-        ws' <- forM sent0 $ \x -> do
-            Reid.split
-            -- y <- Reid.reidRule $ compileEntry x
-            y <- reidRule x
-            return [y]
-        return (M.fromList rs', V.fromList ws')
+        -- The final result
+        -- t = Memo.memo2 Memo.integral Memo.integral u -- t'
+        -- t' i j = u (rules M.! (i, j)) i j
+        t i j = do
+            rs <- lift $ mapM ruleInst rules
+            u rs i j
+    
+        -- Introduce new grammar rules
+        -- TODO: u[k+2] should not depend on u[k] and lower?
+        -- TODO: we should first compute u [] i j, then compute
+        -- (using pure code) other u's.
+        u (r:rs) i j = do
+            u1 <- u rs i j
+            u2 <- return
+                [ q | f <- u1, isFull f
+                , q <- maybeToList (consume r f) ]
+            return $ u1 ++ u2
+    
+        -- Move ,,dot'' in beforehand introduced rules
+        u [] i j
+            | i+1 == j  = return $ sent V.! i
+            | otherwise = Pipes.toListM $ Pipes.every $ do
+                k <- list [i+1 .. j-1]
+                -- Partially processed rule on [i .. k)
+                lefts <- lift $ for2 memo t i k
+                p <- list lefts
+                guard $ not $ isFull p
+                -- Fully processed rule on [k .. j)
+                rights <- lift $ for2 memo t k j
+                f <- list rights
+                guard $ isFull f
+                -- Consume and unify
+                case consume p f of
+                    Nothing -> mzero
+                    Just q  -> return q
+                -- q <- list $ maybeToList $ consume p f
+                -- return q
+              where
+                list = Pipes.Select . Pipes.each
+
+    
+--     -- Reidentify rules and sentence
+--     (rules, sent) = Reid.runReid $ do
+--         -- Rules
+--         let ixs =
+--                 [ (i, j)
+--                 | i <- [0 .. length sent0]
+--                 , j <- [i .. length sent0] ]
+--         rs' <- forM ixs $ \ij -> do
+--             rs <- forM rules0 $ \r -> do
+--                 Reid.split >> reidRule r
+--             return (ij, rs)
+--         -- Words
+--         ws' <- forM sent0 $ \x -> do
+--             Reid.split
+--             -- y <- Reid.reidRule $ compileEntry x
+--             y <- reidRule x
+--             return [y]
+--         return (M.fromList rs', V.fromList ws')
 
 --     -- Compile entry
 --     compileEntry fn = unjust ("compileEntry: " ++ show fn) $ do
 --         (i, g) <- R.compile fn
 --         return $ mkEntry i g
 
-    -- The final result
-    t = Memo.memo2 Memo.integral Memo.integral t'
-    t' i j = u (rules M.! (i, j)) i j
-
-    -- Introduce new grammar rules
-    u (r:rs) i j = u' ++
-        [ q | f <- u', isFull f
-        , q <- maybeToList (consume r f) ]
-        where u' = u rs i j
-
-    -- Move ,,dot'' in beforehand introduced rules
-    u [] i j
-        | i+1 == j  = sent V.! i
-        | otherwise = -- nub   -- TODO: do we really need `nub` here?
-            [ q
-            | k <- [i+1 .. j-1]
-            -- Partially processed rules on [i .. k)
-            , p <- t i k, not (isFull p)
-            -- Fully processed rules on [k .. j)
-            , f <- t k j, isFull f
-            -- Consume and unify
-            , q <- maybeToList $ consume p f ]
-    
 
 -- -- | A recursive definition.
 -- parse :: (Ord a, Ord f) => Sent f a -> Int -> Int -> RuleSet f a
@@ -339,7 +367,7 @@ parse rules0 sent0 = t
 --------------------------------------------------------------------
 
 
--- | Remove duplicate elements.  Doesn't preserve the order of the list.
-nub :: Ord a => [a] -> [a]
-nub = S.toList . S.fromList
-{-# INLINE nub #-}
+-- -- | Remove duplicate elements.  Doesn't preserve the order of the list.
+-- nub :: Ord a => [a] -> [a]
+-- nub = S.toList . S.fromList
+-- {-# INLINE nub #-}
