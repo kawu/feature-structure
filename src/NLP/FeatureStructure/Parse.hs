@@ -44,7 +44,7 @@ import qualified Pipes.Prelude as Pipes
 
 -- Graphviz
 import qualified Data.GraphViz as Z
-import           Data.GraphViz.Types.Monadic ((-->))
+-- import           Data.GraphViz.Types.Monadic ((-->))
 import qualified Data.GraphViz.Types.Monadic as Z
 
 
@@ -104,8 +104,8 @@ drawRule :: (Z.Labellable f, Z.Labellable a) => Rule f a -> IO ()
 drawRule rule = do
 
     let g = Z.digraph (Z.Str "R") $ do
-        Z.graphAttrs [Z.ordering Z.OutEdges]
         drawGraph $ graph rule
+        Z.graphAttrs [Z.ordering Z.OutEdges]
         drawStruct rule
 
     Z.runGraphvizCanvas Z.Dot g Z.Xlib
@@ -114,33 +114,39 @@ drawRule rule = do
 
     -- draw the feature graph
     drawGraph g = forM_ (I.toList $ nodeMap g) $ \(i, nd) -> case nd of
-        Frontier x  -> Z.node (gn g i) [Z.toLabel x]
-        Interior m  -> forM_ (M.toList m) $ \(f, j) -> do
+        Frontier x -> Z.node (gn g i) [Z.toLabel x]
+        Interior m -> forM_ (M.toList m) $ \(f, j) -> do
             Z.edge (gn g i) (gn g j) [Z.toLabel f]
 
     -- draw the rule structure
     drawStruct Rule{..} = do
-        addSN root >> sn root --> gn graph root
+        let g = graph
+        addSN g root
         forM_ (reverse left) $ \t -> do
-            addSN $ T.rootLabel t
-            sn root --> sn (T.rootLabel t)
-            drawTree graph t
+            addSN g $ T.rootLabel t
+            Z.edge (sn g root) (sn g (T.rootLabel t))
+                [Z.style Z.bold]
+            drawTree g t
         forM_ right $ \x -> do
-            addSN' x [Z.color Z.LightGray]
-            sn root --> sn x
-            sn x --> gn graph x
+            addSN' g x [Z.color Z.LightGray]
+            Z.edge (sn g root) (sn g x)
+                [Z.style Z.bold]
     drawTree g t = do
-        addSN $ T.rootLabel t
-        sn (T.rootLabel t) --> gn g (T.rootLabel t)
+        addSN g $ T.rootLabel t
         forM_ (reverse $ T.subForest t) $ \c -> do
-            sn (T.rootLabel t) --> sn (T.rootLabel c)
+            Z.edge (sn g (T.rootLabel t)) (sn g (T.rootLabel c))
+                [Z.style Z.bold]
             drawTree g c
 
     -- Structure node "identifier"
-    sn x = "S" ++ show x
+    -- sn x = "S" ++ show x     <-- finally, we don't want to distinguish
+    --                              structure node from those of the feature
+    --                              graph.
+    sn g x = show $ D.repr x $ disjSet g
     -- Define structure node
-    addSN x = addSN' x []
-    addSN' x as = Z.node (sn x) $ [Z.style Z.filled, Z.color Z.LightBlue] ++ as
+    addSN g x = addSN' g x []
+    addSN' g x as = Z.node (sn g x) $
+        [Z.style Z.filled, Z.color Z.LightBlue] ++ as
 
     -- Graph node "identifier"
     gn g x = show $ D.repr x $ disjSet g
