@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
 
@@ -20,16 +21,19 @@ module NLP.FeatureStructure.Parse
 -- * Misc
 , consume
 , printRule
+, drawRule
 ) where
 
 
-import           Control.Applicative (pure, (<$>), (<*>), (*>))
-import           Control.Monad (forM, forM_, guard, mzero)
+import           Control.Applicative ((<$>), (<*>), (*>))
+import           Control.Monad (forM_, guard, mzero)
 import           Control.Monad.Trans.Class (lift)
-import           Data.Maybe (maybeToList)
+import           Control.Monad.Loops (unfoldrM)
+import           Data.Maybe (catMaybes)
 import qualified Data.Tree as T
 import qualified Data.Set as S
 import qualified Data.Map.Strict as M
+import qualified Data.IntMap.Strict as I
 import qualified Data.Vector as V
 import qualified Data.Traversable as Tr
 -- import qualified Data.MemoCombinators as Memo
@@ -38,11 +42,17 @@ import qualified Control.Monad.Memo as Memo
 import qualified Pipes as Pipes
 import qualified Pipes.Prelude as Pipes
 
+-- Graphviz
+import qualified Data.GraphViz as Z
+import           Data.GraphViz.Types.Monadic ((-->))
+import qualified Data.GraphViz.Types.Monadic as Z
+
 
 import           NLP.FeatureStructure.Core
 import           NLP.FeatureStructure.Graph
+import qualified NLP.FeatureStructure.DisjSet as D
 import qualified NLP.FeatureStructure.Join as J
-import           NLP.FeatureStructure.Reid (Reid)
+-- import           NLP.FeatureStructure.Reid (Reid)
 import qualified NLP.FeatureStructure.Reid as Reid
 
 
@@ -68,8 +78,8 @@ import qualified NLP.FeatureStructure.Reid as Reid
 -- parsed rule.
 
 
--- | Beware!  An orphan instance...
-instance Ord a => Ord (T.Tree a)
+-- -- | Beware!  An orphan instance...
+-- instance Ord a => Ord (T.Tree a)
 
 
 -- | A grammar ,,rule''.  It is a generalization of a regular rule.
@@ -82,11 +92,58 @@ data Rule f a = Rule {
     -- | Right part of the rule, to be parsed.
     , right :: [ID]
     -- | Left part of the rule, already parsed.
-    -- Given in a reverse direction.
+    -- Given in the reverse order.
     , left  :: T.Forest ID
     -- | Graph corresponding to the rule.
     , graph  :: Graph f a
-    } deriving (Show, Eq, Ord)
+    } deriving (Show, Eq)
+
+
+-- | Draw the rule using the graphviz library.
+drawRule :: (Z.Labellable f, Z.Labellable a) => Rule f a -> IO ()
+drawRule rule = do
+
+    let g = Z.digraph (Z.Str "R") $ do
+        Z.graphAttrs [Z.ordering Z.OutEdges]
+        drawGraph $ graph rule
+        drawStruct rule
+
+    Z.runGraphvizCanvas Z.Dot g Z.Xlib
+
+  where
+
+    -- draw the feature graph
+    drawGraph g = forM_ (I.toList $ nodeMap g) $ \(i, nd) -> case nd of
+        Frontier x  -> Z.node (gn g i) [Z.toLabel x]
+        Interior m  -> forM_ (M.toList m) $ \(f, j) -> do
+            Z.edge (gn g i) (gn g j) [Z.toLabel f]
+
+    -- draw the rule structure
+    drawStruct Rule{..} = do
+        addSN root >> sn root --> gn graph root
+        forM_ (reverse left) $ \t -> do
+            addSN $ T.rootLabel t
+            sn root --> sn (T.rootLabel t)
+            drawTree graph t
+        forM_ right $ \x -> do
+            addSN' x [Z.color Z.LightGray]
+            sn root --> sn x
+            sn x --> gn graph x
+    drawTree g t = do
+        addSN $ T.rootLabel t
+        sn (T.rootLabel t) --> gn g (T.rootLabel t)
+        forM_ (reverse $ T.subForest t) $ \c -> do
+            sn (T.rootLabel t) --> sn (T.rootLabel c)
+            drawTree g c
+
+    -- Structure node "identifier"
+    sn x = "S" ++ show x
+    -- Define structure node
+    addSN x = addSN' x []
+    addSN' x as = Z.node (sn x) $ [Z.style Z.filled, Z.color Z.LightBlue] ++ as
+
+    -- Graph node "identifier"
+    gn g x = show $ D.repr x $ disjSet g
 
 
 -- | Print the rule to stdout.
@@ -261,7 +318,7 @@ type Token f a = S.Set (Rule f a)
 --
 parse
     :: (Ord a, Ord f)
-    => [Rule f a]       -- ^ Grammar rules (to be reid)
+    => [Rule f a]       -- ^ Grammar rules (to be reid/instantiated)
     -> [Rule f a]       -- ^ Sentence (to be reid)
     -> Int -> Int       -- ^ Positions in the sentence
     -> [Rule f a]
@@ -275,26 +332,25 @@ parse rules sent0 mi mj =
     doit sent = t
       where
 
-        -- The final result
-        -- t = Memo.memo2 Memo.integral Memo.integral u -- t'
-        -- t' i j = u (rules M.! (i, j)) i j
+        -- all rules on the span [i, j)
         t i j = do
+            xs  <- u0 i j
+            xss <- unfoldrM uk xs
+            return $ xs ++ concat xss
+
+        -- u(k) on the basis of u(k-1)
+        uk xs = do
             rs <- lift $ mapM ruleInst rules
-            u rs i j
+            let ys = catMaybes [consume r x | x <- xs, isFull x, r <- rs]
+            return $ case ys of
+                -- stop unfolding
+                []  -> Nothing  
+                -- argument for the next unfolding step is the same
+                -- as the element of the unfolding result
+                _   -> Just (ys, ys)
     
-        -- Introduce new grammar rules
-        -- TODO: u[k+2] should not depend on u[k] and lower?
-        -- TODO: we should first compute u [] i j, then compute
-        -- (using pure code) other u's.
-        u (r:rs) i j = do
-            u1 <- u rs i j
-            u2 <- return
-                [ q | f <- u1, isFull f
-                , q <- maybeToList (consume r f) ]
-            return $ u1 ++ u2
-    
-        -- Move ,,dot'' in beforehand introduced rules
-        u [] i j
+        -- Move the ,,dot'' in the beforehand introduced rules
+        u0 i j
             | i+1 == j  = return $ sent V.! i
             | otherwise = Pipes.toListM $ Pipes.every $ do
                 k <- list [i+1 .. j-1]
@@ -312,56 +368,9 @@ parse rules sent0 mi mj =
                     Just q  -> return q
                 -- q <- list $ maybeToList $ consume p f
                 -- return q
-              where
-                list = Pipes.Select . Pipes.each
+                where list = Pipes.Select . Pipes.each
 
     
---     -- Reidentify rules and sentence
---     (rules, sent) = Reid.runReid $ do
---         -- Rules
---         let ixs =
---                 [ (i, j)
---                 | i <- [0 .. length sent0]
---                 , j <- [i .. length sent0] ]
---         rs' <- forM ixs $ \ij -> do
---             rs <- forM rules0 $ \r -> do
---                 Reid.split >> reidRule r
---             return (ij, rs)
---         -- Words
---         ws' <- forM sent0 $ \x -> do
---             Reid.split
---             -- y <- Reid.reidRule $ compileEntry x
---             y <- reidRule x
---             return [y]
---         return (M.fromList rs', V.fromList ws')
-
---     -- Compile entry
---     compileEntry fn = unjust ("compileEntry: " ++ show fn) $ do
---         (i, g) <- R.compile fn
---         return $ mkEntry i g
-
-
--- -- | A recursive definition.
--- parse :: (Ord a, Ord f) => Sent f a -> Int -> Int -> RuleSet f a
--- parse sent = 
---     doit
---   where
---     doit = Memo.memo2 Memo.integral Memo.integral doit'
---     doit' i j
---         | i == j    = sent V.! i
---         | otherwise = S.fromList
---             [ r
---             | k <- [i .. j - 1]
---             -- Partially processed rules on [i .. k]
---             , p <- partial $ doit i k
---             -- Fully processed rules on [k+1 .. j]
---             , f <- full $ doit (k + 1) j
---             -- Consume and unify
---             , r <- maybeToList $ consume p f ]
---     full = filter isFull . S.toList
---     partial = filter (not . isFull) . S.toList
-
-
 --------------------------------------------------------------------
 -- Misc
 --------------------------------------------------------------------

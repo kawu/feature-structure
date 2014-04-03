@@ -54,6 +54,10 @@ union x y = DisjSet $ M.union
 -- | Representative of the given element.  Returns the same element,
 -- if it is not present in the set.
 -- TODO: Implement path compression.
+-- TODO: sometimes we want to ignore the problem of path compression, for
+-- example when we want to compute a representant within a pure setting.
+-- We are using this function, `repr`, for this purpose in several places
+-- in the code.
 repr :: Ord a => a -> DisjSet a -> a
 repr x ds@(DisjSet m) = case M.lookup x m of
     Just y  -> repr y ds
