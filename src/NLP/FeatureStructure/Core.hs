@@ -7,7 +7,7 @@
 
 module NLP.FeatureStructure.Core
 ( ID
-, Uni
+-- , Uni
 ) where
 
 
@@ -30,9 +30,9 @@ type ID = Int
 --   requires that both input graphs has identifiers of the
 --   same type.  In the general case, it doesn't have to be. 
 --------------------------------------------------------------------
-
-
-class (Show i, Ord i, Show a, Eq a, Show f, Ord f)
-    => Uni i f a where
-instance (Show i, Ord i, Show a, Eq a, Show f, Ord f)
-    => Uni i f a where
+-- 
+-- 
+-- class (Show i, Ord i, Show a, Eq a, Show f, Ord f)
+--     => Uni i f a where
+-- instance (Show i, Ord i, Show a, Eq a, Show f, Ord f)
+--     => Uni i f a where
