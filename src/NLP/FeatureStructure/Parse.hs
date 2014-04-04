@@ -44,6 +44,7 @@ import qualified Pipes.Prelude as Pipes
 
 -- Graphviz
 import qualified Data.GraphViz as Z
+-- import qualified Data.GraphViz.Attributes.Complete as ZA
 -- import           Data.GraphViz.Types.Monadic ((-->))
 import qualified Data.GraphViz.Types.Monadic as Z
 
@@ -104,33 +105,54 @@ drawRule :: (Z.Labellable f, Z.Labellable a) => Rule f a -> IO ()
 drawRule rule = do
 
     let g = Z.digraph (Z.Str "R") $ do
-        drawGraph $ graph rule
-        Z.graphAttrs [Z.ordering Z.OutEdges]
+        drawGraphNodes $ graph rule
+        drawGraphEdges $ graph rule
+        -- Z.graphAttrs [Z.ordering Z.OutEdges]
+        Z.nodeAttrs [Z.ordering Z.OutEdges]
         drawStruct rule
 
     Z.runGraphvizCanvas Z.Dot g Z.Xlib
 
   where
 
-    -- draw the feature graph
-    drawGraph g = forM_ (I.toList $ nodeMap g) $ \(i, nd) -> case nd of
-        Frontier x -> Z.node (gn g i) [Z.toLabel x]
+    -- draw the feature graph (only nodes and clusters)
+    drawGraphNodes g = forM_ (I.toList $ nodeMap g) $ \(i, nd) -> case nd of
+        -- we don't draw orphan frontier nodes!
+        Frontier _ -> return ()
+        -- Edge order is not preserved with clusters, unfortunately!
+        -- Interior m -> Z.cluster (Z.Int i) $ do
+        Interior m -> do
+            Z.node (gn g i) []
+            forM_ (M.elems m) $ \j ->
+                case I.lookup (D.repr j $ disjSet g) (nodeMap g) of
+                    Nothing -> return ()
+                    Just n' -> case n' of
+                        Interior _  -> return ()
+                        Frontier x  -> Z.node (gn g i ++ gn g j)
+                            [Z.toLabel x, Z.shape Z.PlainText]
+
+    -- draw the feature graph (only edges)
+    drawGraphEdges g = forM_ (I.toList $ nodeMap g) $ \(i, nd) -> case nd of
+        -- we don't draw orphan frontier nodes!
+        Frontier _ -> return () -- Z.node (gn g i) [Z.toLabel x]
         Interior m -> forM_ (M.toList m) $ \(f, j) -> do
-            Z.edge (gn g i) (gn g j) [Z.toLabel f]
+            case I.lookup (D.repr j $ disjSet g) (nodeMap g) of
+                Nothing -> return ()
+                Just n' -> case n' of
+                    Interior _  -> Z.edge (gn g i) (gn g j) [Z.toLabel f]
+                    Frontier _  -> Z.edge (gn g i)
+                        (gn g i ++ gn g j) [Z.toLabel f, Z.style Z.dotted]
 
     -- draw the rule structure
     drawStruct Rule{..} = do
-        let g = graph
-        addSN g root
+        addSN graph root
         forM_ (reverse left) $ \t -> do
-            addSN g $ T.rootLabel t
-            Z.edge (sn g root) (sn g (T.rootLabel t))
-                [Z.style Z.bold]
-            drawTree g t
+            let root' = T.rootLabel t
+            Z.edge (sn graph root) (sn graph root') [Z.style Z.bold]
+            drawTree graph t
         forM_ right $ \x -> do
-            addSN' g x [Z.color Z.LightGray]
-            Z.edge (sn g root) (sn g x)
-                [Z.style Z.bold]
+            addSN' graph x [Z.color Z.LightGray]
+            Z.edge (sn graph root) (sn graph x) [Z.style Z.bold]
     drawTree g t = do
         addSN g $ T.rootLabel t
         forM_ (reverse $ T.subForest t) $ \c -> do
@@ -139,9 +161,7 @@ drawRule rule = do
             drawTree g c
 
     -- Structure node "identifier"
-    -- sn x = "S" ++ show x     <-- finally, we don't want to distinguish
-    --                              structure node from those of the feature
-    --                              graph.
+    -- sn g x = "S" ++ show (D.repr x $ disjSet g)
     sn g x = show $ D.repr x $ disjSet g
     -- Define structure node
     addSN g x = addSN' g x []
