@@ -105,11 +105,11 @@ drawRule :: (Z.Labellable f, Z.Labellable a) => Rule f a -> IO ()
 drawRule rule = do
 
     let g = Z.digraph (Z.Str "R") $ do
+        Z.graphAttrs [Z.ordering Z.OutEdges]
+        -- Z.nodeAttrs [Z.ordering Z.OutEdges]
+        drawStruct rule
         drawGraphNodes $ graph rule
         drawGraphEdges $ graph rule
-        -- Z.graphAttrs [Z.ordering Z.OutEdges]
-        Z.nodeAttrs [Z.ordering Z.OutEdges]
-        drawStruct rule
 
     Z.runGraphvizCanvas Z.Dot g Z.Xlib
 
@@ -128,7 +128,7 @@ drawRule rule = do
                     Nothing -> return ()
                     Just n' -> case n' of
                         Interior _  -> return ()
-                        Frontier x  -> Z.node (gn g i ++ gn g j)
+                        Frontier x  -> Z.node (fn g i j)
                             [Z.toLabel x, Z.shape Z.PlainText]
 
     -- draw the feature graph (only edges)
@@ -141,7 +141,7 @@ drawRule rule = do
                 Just n' -> case n' of
                     Interior _  -> Z.edge (gn g i) (gn g j) [Z.toLabel f]
                     Frontier _  -> Z.edge (gn g i)
-                        (gn g i ++ gn g j) [Z.toLabel f, Z.style Z.dotted]
+                        (fn g i j) [Z.toLabel f, Z.style Z.dotted]
 
     -- draw the rule structure
     drawStruct Rule{..} = do
@@ -170,6 +170,10 @@ drawRule rule = do
 
     -- Graph node "identifier"
     gn g x = show $ D.repr x $ disjSet g
+
+    -- Graph frontier node "identifier"; takes
+    -- into account the identifier of the parent
+    fn g x y = gn g x ++ "-" ++ gn g y
 
 
 -- | Print the rule to stdout.

@@ -92,6 +92,11 @@ nominative = leaf "case" "nom"
 accusative = leaf "case" "acc"
 
 
+-- | Orth.
+orth :: Text -> Avm
+orth x = leaf "orth" x
+
+
 -- | Subcategorization frame.
 subcat :: FF -> Avm
 subcat = feat "subcat" . list "nil" "first" "rest"
@@ -120,42 +125,49 @@ single x = [avm x]
 sleepL :: FN
 sleepL = avm $ do
     verb >> plural
+    orth "sleep"
     subcat []
 
 
 sleepsL :: FN
 sleepsL = avm $ do
     verb >> singular
+    orth "sleeps"
     subcat []
 
 
 loveL :: FN
 loveL = avm $ do
     verb >> plural
+    orth "love"
     subcat $ single $ nounPhrase >> accusative
 
 
 lovesL :: FN
 lovesL = avm $ do
     verb >> singular
+    orth "loves"
     subcat $ single $ nounPhrase >> accusative
 
 
 eatL :: FN
 eatL = avm $ do
     verb >> plural
+    orth "eat"
     subcat $ single $ nounPhrase >> accusative
 
 
 eatsL :: FN
 eatsL = avm $ do
     verb >> singular
+    orth "eats"
     subcat $ single $ nounPhrase >> accusative
 
 
 tellL :: FN
 tellL = avm $ do
     verb >> plural
+    orth "tell"
     subcat
         [ avm $ nounPhrase >> accusative
         , avm sent ]
@@ -164,6 +176,7 @@ tellL = avm $ do
 tellsL :: FN
 tellsL = avm $ do
     verb >> singular
+    orth "tells"
     subcat
         [ avm $ nounPhrase >> accusative
         , avm sent ]
@@ -175,35 +188,35 @@ tellsL = avm $ do
 
 
 lambL :: FN
-lambL = avm $ noun >> singular
+lambL = avm $ noun >> singular >> orth "lamb"
 
 
 lambsL :: FN
-lambsL = avm $ noun >> plural
+lambsL = avm $ noun >> plural >> orth "lambs"
 
 
 sheL :: FN
-sheL = avm $ pronoun >> singular >> nominative
+sheL = avm $ pronoun >> singular >> nominative >> orth "she"
 
 
 herL :: FN
-herL = avm $ pronoun >> singular >> accusative
+herL = avm $ pronoun >> singular >> accusative >> orth "her"
 
 
 rachelL :: FN
-rachelL = avm $ properName >> singular
+rachelL = avm $ properName >> singular >> orth "rachel"
 
 
 jacobL :: FN
-jacobL = avm $ properName >> singular
+jacobL = avm $ properName >> singular >> orth "jacob"
 
 
 aL :: FN
-aL = avm $ determiner >> singular
+aL = avm $ determiner >> singular >> orth "a"
 
 
 twoL :: FN
-twoL = avm $ determiner >> plural
+twoL = avm $ determiner >> plural >> orth "two"
 
 
 --------------------------------------------------------------------
