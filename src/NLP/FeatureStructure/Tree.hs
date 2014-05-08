@@ -13,20 +13,23 @@ module NLP.FeatureStructure.Tree
 , FN (..)
 , FF
 , ID
+-- ** Core combinators
+, empty
+, atom
+, label
+, name
 
 -- * Compile
 , compile
 , compiles
 
 -- * AVM monad
-, AvmM (..)
-, Avm
+, AVMM (..)
+, AVM
 , avm
 -- ** Core combinators
 , feat
-, atom
-, name
-, undef
+, nameAVM
 -- ** Other combinators
 , leaf
 , list
@@ -41,6 +44,7 @@ import qualified Control.Monad.State.Strict as S
 import qualified Data.Set as Set
 import qualified Data.Map.Strict as M
 import qualified Data.Traversable as T
+import           Data.String (IsString (..))
 
 
 import           NLP.FeatureStructure.Core
@@ -74,8 +78,43 @@ data FN i f a = FN {
 
 
 -- | A feature forest.
--- NOTE: a term "parse forest" has a different meaning w.r.t. parsing.
 type FF i f a = [FN i f a]
+
+
+-- | If the string is empty, it represents an `empty` tree.
+-- If the string starts with '?', it represents a `label`.
+-- Otherwise, it represents a `atom`.
+instance (IsString i, IsString a) => IsString (FN i f a) where
+    fromString xs = case xs of
+        []      -> empty
+        ('?':_) -> label $ fromString xs
+        _       -> atom $ fromString xs
+
+
+--------------------------------------------------------------------
+-- Core combinators
+--------------------------------------------------------------------
+
+
+-- | An empty tree.  It can be unified with both
+-- complex structures and atomic values.
+empty :: FN i f a
+empty = FN Nothing $ Subs M.empty
+
+
+-- | An atomic `FN`.
+atom :: a -> FN i f a
+atom = FN Nothing . Atom
+
+
+-- | A lone identifier.
+label :: i -> FN i f a
+label = flip name empty
+
+
+-- | Assign name to an `FN`.
+name :: i -> FN i f a -> FN i f a
+name i fn = fn { ide = Just i }
 
 
 --------------------------------------------------------------------
@@ -89,7 +128,7 @@ data ConS i f a = ConS {
       conC  :: Int
     -- | A mapping from old to new identifiers.
     , conI  :: M.Map i (Set.Set ID) }
-    -- | The result.
+    -- -- | The result.
     -- , conR  :: [(ID, G.Node f a)] }
 
 
@@ -217,73 +256,53 @@ addNode i = S.lift . J.liftGraph . G.setNode i
 
 
 -- | A monad providing convenient syntax for defining feature trees.
-newtype AvmM i f a b = AvmM { unAvm :: S.State (AV i f a) b }
-    deriving (Monad, S.MonadState (AV i f a))
+newtype AVMM i f a b = AVMM { unAVM :: S.State (AVMS i f a) b }
+    deriving (Monad, S.MonadState (AVMS i f a))
+
+
+-- | An AVM state.
+data AVMS i f a = AVMS {
+    -- | An identifier of the AVM.
+      avmID :: Maybe i
+    -- | An attribute-value map.
+    , avmAV :: AV i f a }
 
 
 -- | Convenient type alias that will probably be used most of the time.
-type Avm i f a = AvmM i f a ()
+type AVM i f a = AVMM i f a ()
 
 
--- | Runs the AvmM monad, generating a feature tree.
-avm :: AvmM i f a b -> FN i f a
-avm m = FN Nothing $ Subs $ S.execState (unAvm m) M.empty
-
-
--- -- | Monoid instance does a union of the two maps with the second map
--- -- overwriting any duplicates.
--- instance Monoid (Splices s) where
---     mempty  = empty
---     mappend = unionWithS (\_ b -> b)
+-- | Run the AVMM monad and return a feature tree.
+avm :: AVMM i f a b -> FN i f a
+avm m =
+    let AVMS{..} = S.execState (unAVM m) (AVMS Nothing M.empty)
+    in  FN avmID $ Subs avmAV
 
 
 --------------------------------------------------------------------
--- Core combinators
+-- Core AVM combinators
 --------------------------------------------------------------------
 
 
 -- | Forces a subtree to be added.  If the feature already exists,
 -- its value is overwritten.
-feat :: Ord f => f -> FN i f a  -> Avm i f a
-feat ft fn = S.modify $ M.insert ft fn
+feat :: Ord f => f -> FN i f a  -> AVM i f a
+feat ft fn = S.modify $ \s -> s { avmAV = M.insert ft fn (avmAV s) }
 
 
--- | An atomic value.
-atom :: a -> FN i f a
-atom = FN Nothing . Atom
-
-
--- | An undefined subtree.
-undef :: FN i f a
-undef = FN Nothing $ Subs M.empty
-
-
--- | Assign name to an `FN`.
-name :: i -> FN i f a -> FN i f a
-name i fn = fn { ide = Just i }
+-- | Assign the name to the AVM.  If the lable already exists,
+-- its value is overwritten.
+nameAVM :: i -> AVM i f a
+nameAVM x = S.modify $ \s -> s { avmID = Just x }
 
 
 --------------------------------------------------------------------
--- Other combinators
+-- Other AVM combinators
 --------------------------------------------------------------------
-
 
 -- | An atomic value assigned to a feature.
-leaf :: Ord f => f -> a -> Avm i f a
+leaf :: Ord f => f -> a -> AVM i f a
 leaf x = feat x . atom
-
-
--- -- | A list encoded as a feature structure.
--- -- The first two arguments correspond to "head" and "tail"
--- -- features, respectively.
--- list :: Ord f => f -> f -> FF i f a -> Avm i f a
--- list i j ff =
---     doit ff
---   where
---     doit (x:xs) = do
---         feat i x
---         feat j $ avm $ doit xs
---     doit [] = return ()
 
 
 -- | A list encoded as a named feature structure.
@@ -309,7 +328,7 @@ list nil first rest ff =
 
 
 -- | An infix version of `feat`.
-(##) :: Ord f => f -> FN i f a  -> Avm i f a
+(##) :: Ord f => f -> FN i f a  -> AVM i f a
 (##) = feat
 infixr 0 ##
 

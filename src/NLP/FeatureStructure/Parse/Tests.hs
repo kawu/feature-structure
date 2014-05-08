@@ -44,7 +44,7 @@ import qualified Data.Vector as V
 
 
 import           NLP.FeatureStructure.Tree
-    (avm, leaf, atom, feat, name, undef, list)
+    (avm, leaf, empty, atom, name, label, feat, nameAVM, list)
 import qualified NLP.FeatureStructure.Tree as R
 import qualified NLP.FeatureStructure.Graph as G
 import qualified NLP.FeatureStructure.Parse as P
@@ -61,7 +61,7 @@ type FT = R.FT Text Text Text
 type FF = R.FF Text Text Text
 type FN = R.FN Text Text Text
 type AV = R.AV Text Text Text
-type Avm = R.Avm Text Text Text
+type AVM = R.AVM Text Text Text
 
 
 --------------------------------------------------------------------
@@ -69,52 +69,73 @@ type Avm = R.Avm Text Text Text
 --------------------------------------------------------------------
 
 
--- | Grammatical class.
-sent, verb, determiner, noun, pronoun, nounPhrase, properName :: Avm
-sent = leaf "cat" "s"
-verb = leaf "cat" "v"
-noun = leaf "cat" "n"
-pronoun = leaf "cat" "pron"
-determiner = leaf "cat" "d"
-nounPhrase = leaf "cat" "np"
-properName = leaf "cat" "propn"
+-- | A grammatical class constructor.
+cat :: FN -> AVM
+cat = feat "cat"
+catl :: Text -> AVM
+catl = cat . atom
+
+-- | Grammatical classes in our toy grammar.
+sent, verb, determiner, noun, pronoun, nounPhrase, properName :: AVM
+sent = catl "s"
+verb = catl "v"
+noun = catl "n"
+pronoun = catl "pron"
+determiner = catl "d"
+nounPhrase = catl "np"
+properName = catl "propn"
 
 
 -- | Number.
-singular, plural :: Avm
-singular = leaf "num" "sg"
-plural = leaf "num" "pl"
+num :: FN -> AVM
+num = feat "num"
+numl :: Text -> AVM
+numl = num . atom
+
+singular, plural :: AVM
+singular = numl "sg"
+plural = numl "pl"
 
 
 -- | Case.
-nominative, accusative :: Avm
-nominative = leaf "case" "nom"
-accusative = leaf "case" "acc"
+cas :: FN -> AVM
+cas = feat "case"
+casl :: Text -> AVM
+casl = cas . atom
+
+nominative, accusative :: AVM
+nominative = casl "nom"
+accusative = casl "acc"
 
 
 -- | Orth.
-orth :: Text -> Avm
+orth :: Text -> AVM
 orth x = leaf "orth" x
 
 
--- | Subcategorization frame.
-subcat :: FF -> Avm
-subcat = feat "subcat" . list "nil" "first" "rest"
+--------------------------------------------------------------------
+-- Subcategorization frame.
+--------------------------------------------------------------------
 
 
--- | A singleton forest.
-single :: Avm -> FF
-single x = [avm x]
+-- | Subcategorization feature.
+subcat :: FN -> AVM
+subcat = feat "subcat"
 
 
--- -- | A named feature.
--- named :: Text -> Text -> FN -> Avm
--- named x y = feat x . name y
--- 
--- 
--- -- | A dead end.
--- dead :: Text -> Text ->  Avm
--- dead x y = named x y undef
+-- | The first feature of the subcat.
+first :: FN -> AVM
+first = feat "first"
+
+
+-- | The rest feature of the subcat.
+rest :: FN -> AVM
+rest = feat "rest"
+
+
+-- | Make subcategorization frame from a list of `AVM`s.
+subcatFrame :: [AVM] -> AVM
+subcatFrame = subcat . list "nil" "first" "rest" . map avm
 
 
 --------------------------------------------------------------------
@@ -124,62 +145,58 @@ single x = [avm x]
 
 sleepL :: FN
 sleepL = avm $ do
-    verb >> plural
     orth "sleep"
-    subcat []
+    verb >> plural
+    subcatFrame []
 
 
 sleepsL :: FN
 sleepsL = avm $ do
-    verb >> singular
     orth "sleeps"
-    subcat []
+    verb >> singular
+    subcatFrame []
 
 
 loveL :: FN
 loveL = avm $ do
-    verb >> plural
     orth "love"
-    subcat $ single $ nounPhrase >> accusative
+    verb >> plural
+    subcatFrame [nounPhrase >> accusative]
 
 
 lovesL :: FN
 lovesL = avm $ do
-    verb >> singular
     orth "loves"
-    subcat $ single $ nounPhrase >> accusative
+    verb >> singular
+    subcatFrame [nounPhrase >> accusative]
 
 
 eatL :: FN
 eatL = avm $ do
-    verb >> plural
     orth "eat"
-    subcat $ single $ nounPhrase >> accusative
+    verb >> plural
+    subcatFrame [nounPhrase >> accusative]
 
 
 eatsL :: FN
 eatsL = avm $ do
-    verb >> singular
     orth "eats"
-    subcat $ single $ nounPhrase >> accusative
+    verb >> singular
+    subcatFrame [nounPhrase >> accusative]
 
 
 tellL :: FN
 tellL = avm $ do
-    verb >> plural
     orth "tell"
-    subcat
-        [ avm $ nounPhrase >> accusative
-        , avm sent ]
+    verb >> plural
+    subcatFrame [nounPhrase >> accusative, sent]
 
 
 tellsL :: FN
 tellsL = avm $ do
-    verb >> singular
     orth "tells"
-    subcat
-        [ avm $ nounPhrase >> accusative
-        , avm sent ]
+    verb >> singular
+    subcatFrame [nounPhrase >> accusative, sent]
 
 
 --------------------------------------------------------------------
@@ -224,106 +241,58 @@ twoL = avm $ determiner >> plural >> orth "two"
 --------------------------------------------------------------------
 
 
--- | A sentence rule.
-sentR :: P.Rule Text Text
-sentR = unjust "sentR" $ do
-    (is, g) <- R.compiles
-        [ avm $ do
-            leaf "cat" "s"
-        , avm $ do
-            leaf "cat" "np"
-            feat "num" $ name "?num" undef
-            nominative
-        , avm $ do
-            verb
-            feat "num" $ name "?num" undef
-            subcat [] ]
+-- | Construct a rule with the given head and the given body.
+mkR :: String -> AVM -> [AVM] -> P.Rule Text Text
+mkR ruleName x xs = unjust ruleName $ do
+    (is, g) <- R.compiles $ map avm (x:xs)
     (rh, rb) <- unCons is
     return $ P.mkRule rh rb g
+
+
+-- | A sentence rule.
+sentR :: P.Rule Text Text
+sentR = mkR "sentR" sent
+    [ nounPhrase >> nominative >> num "?num"
+    , verb >> subcatFrame [] >> num "?num" ]
 
 
 -- | Subcategorization resolution.
 subcatR :: P.Rule Text Text
-subcatR = unjust "subcatR" $ do
-    (is, g) <- R.compiles
-        [ avm $ do
-            verb
-            feat "num" $ name "?num" undef
-            feat "subcat" $ name "?args" undef
-        , avm $ do
-            verb
-            feat "num" $ name "?num" undef
-            feat "subcat" $ avm $ do
-                feat "first" $ name "?arg1" undef
-                feat "rest" $ name "?args" undef
-        , name "?arg1" undef ]
-    (rh, rb) <- unCons is
-    return $ P.mkRule rh rb g
+subcatR = mkR "subcatR"
+    ( verb >> num "?num" >> subcat "?xs" )
+    [ verb >> num "?num" >> subcat (avm $
+        first "?x" >> rest "?xs")
+    , nameAVM "?x" ]
 
 
 -- | NP -> D + N
 npDetNounR :: P.Rule Text Text
-npDetNounR = unjust "npDetNounR" $ do
-    (is, g) <- R.compiles
-        [ avm $ do
-            nounPhrase
-            feat "num"  $ name "?num" undef
-            feat "case" $ name "?case" undef
-        , avm $ do
-            determiner
-            feat "num" $ name "?num" undef
-        , avm $ do
-            noun
-            feat "num" $ name "?num" undef
-            feat "case" $ name "?case" undef ]
-    (rh, rb) <- unCons is
-    return $ P.mkRule rh rb g
+npDetNounR = mkR "npDetNounR" hd bd where
+    hd = nounPhrase >> num "?num" >> cas "?case"
+    bd = [ determiner >> num "?num"
+         , noun >> num "?num" >> cas "?case" ]
 
 
 -- | NP -> N (plural)
 npPlNounR :: P.Rule Text Text
-npPlNounR = unjust "npPlNounR" $ do
-    (is, g) <- R.compiles
-        [ avm $ do
-            nounPhrase >> plural
-            feat "case" $ name "?case" undef
-        , avm $ do
-            noun >> plural
-            feat "case" $ name "?case" undef ]
-    (rh, rb) <- unCons is
-    return $ P.mkRule rh rb g
+npPlNounR = mkR "npPlNounR"
+    (nounPhrase >> plural >> cas "?case")
+    [noun >> plural >> cas "?case"]
 
 
 -- | NP -> Pronoun
 npPronR :: P.Rule Text Text
-npPronR = unjust "npPronR" $ do
-    (is, g) <- R.compiles
-        [ avm $ do
-            nounPhrase
-            feat "num"  $ name "?num" undef
-            feat "case" $ name "?case" undef
-        , avm $ do
-            pronoun
-            feat "num" $ name "?num" undef
-            feat "case" $ name "?case" undef ]
-    (rh, rb) <- unCons is
-    return $ P.mkRule rh rb g
+npPronR = mkR "npPronR" 
+    (nounPhrase >> num "?num" >> cas "?case")
+    [pronoun >> num "?num" >> cas "?case"]
 
 
 -- | NP -> Proper name
 npPropNameR :: P.Rule Text Text
-npPropNameR = unjust "npPropNameR" $ do
-    (is, g) <- R.compiles
-        [ avm $ do
-            nounPhrase
-            feat "num"  $ name "?num" undef
-            feat "case" $ name "?case" undef
-        , avm $ do
-            properName
-            feat "num" $ name "?num" undef
-            feat "case" $ name "?case" undef ]
-    (rh, rb) <- unCons is
-    return $ P.mkRule rh rb g
+npPropNameR = mkR "npPropNameR"
+    (nounPhrase >> numCas)
+    [properName >> numCas]
+    where numCas = num "?num" >> cas "?case"
 
 
 -- | All rules of the grammar.

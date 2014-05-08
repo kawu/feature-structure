@@ -16,7 +16,7 @@ import qualified Data.Text as T
 
 
 import           NLP.FeatureStructure.Tree
-    (avm, leaf, atom, feat, name, undef, list)
+    (avm, leaf, empty, atom, feat, name, list)
 import qualified NLP.FeatureStructure.Tree as R
 
 
@@ -30,7 +30,7 @@ type FT = R.FT Text Text Text
 type FF = R.FF Text Text Text
 type FN = R.FN Text Text Text
 type AV = R.AV Text Text Text
-type Avm = R.Avm Text Text Text
+type AVM = R.AVM Text Text Text
 
 
 --------------------------------------------------------------------
@@ -39,24 +39,24 @@ type Avm = R.Avm Text Text Text
 
 
 -- | Grammatical class.
-verb :: Avm
+verb :: AVM
 verb = leaf "cat" "v"
 
 
 -- | Number.
-singular, plural :: Avm
+singular, plural :: AVM
 singular = leaf "num" "sg"
 plural = leaf "num" "pl"
 
 
 -- | Case.
-nominative, accusative :: Avm
+nominative, accusative :: AVM
 nominative = leaf "cas" "nom"
 accusative = leaf "cas" "acc"
 
 
 -- | Subcategorization frame.
-subcat :: FF -> Avm
+subcat :: FF -> AVM
 subcat = feat "subcat" . list "nil" "first" "rest"
 
 
@@ -91,7 +91,7 @@ subcat = feat "subcat" . list "nil" "first" "rest"
 
 
 -- | A singleton forest.
-single :: Avm -> FF
+single :: AVM -> FF
 single x = [avm x]
 
 
@@ -113,7 +113,7 @@ dummy = avm $ do
     singular
     feat "cat" $ name "x" $ atom "v"
     subcat $ single $ do
-        feat "cat" $ name "x" undef
+        feat "cat" $ name "x" empty
         leaf "case" "acc"
 
 
@@ -127,11 +127,11 @@ sentR =
         leaf "cat" "s"
     , avm $ do
         leaf "cat" "np"
-        feat "num" $ name "?num" undef
+        feat "num" $ name "?num" empty
         nominative
     , avm $ do
         verb
-        feat "num" $ name "?num" undef
+        feat "num" $ name "?num" empty
         subcat [] ]
 
 
