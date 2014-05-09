@@ -36,14 +36,15 @@ library
     exposed-modules:
         NLP.FeatureStructure.Core
       , NLP.FeatureStructure.Tree
-      , NLP.FeatureStructure.Tree.Tests
+      -- , NLP.FeatureStructure.Tree.Tests
+      , NLP.FeatureStructure.AVM
       , NLP.FeatureStructure.Graph
       , NLP.FeatureStructure.Join
       , NLP.FeatureStructure.Unify
       , NLP.FeatureStructure.Unify.Tests
       , NLP.FeatureStructure.Reid
       , NLP.FeatureStructure.Parse
-      , NLP.FeatureStructure.Parse.Tests
+      -- , NLP.FeatureStructure.Parse.Tests
 
     other-modules:
         NLP.FeatureStructure.DisjSet

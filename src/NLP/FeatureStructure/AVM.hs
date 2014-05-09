@@ -1,255 +1,163 @@
--- | An AVM language for defining feature structures.
--- TODO: Change the name?
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 
--- An interface for defining feature structures in an AVM style.
---
--- The idea behind the algorithm is as follows.  A feature structure
--- is defined in a "tree-like style", but some of the subtrees are
--- supposed to unify (and, as a result, represent the same subgraph).
---
--- We therefore start by creating a tree (or a sequence of trees),
--- in which each node will have an identifier assigned.  In fact,
--- since a tree is a trivial graph (and since each node has an
--- identifier), we can use our feature-graph structure to represent
--- the tree.
---
--- The question is, how to trasform a tree into a graph.  But it should
--- not be a difficult task: we already know which nodes are supposed
--- to represent the same subgraphs.  Therefore, we have a list of
--- pairs, each pair consisting of two nodes which are to be joined.
--- And we can just supply the unification algorithm with this list
--- of node-pairs.
---
---
---
--- The main steps of the process:
--- * Describe a feature structure with the help of a free monad.
--- * Compile (or interpret) the free monad to a feature tree.
--- * Transform the feature tree to a feature graph.
+-- | An embedded domain specific language for defining feature structures.
 
 
 module NLP.FeatureStructure.AVM
 (
+-- * AVM monad
+  AVMM (..)
+, AVM
+, avm
+
+-- * Core combinators
+, empty
+, atom
+, label
+, feat
+
+-- * List combinators
+, list
+
+-- * Infix verions
+, (##)
 ) where
 
 
-import           Control.Monad.Free
+import qualified Control.Monad.State.Strict as S
+import qualified Data.Map.Strict as M
+import           Data.String (IsString (..))
+
+
 import qualified NLP.FeatureStructure.Tree as T
 
 
-
--- To summurize: what we are really trying to do here is to use a
--- monadic interface to define a tree!
--- 
--- Lets look at the following, simplified example.
--- Basically, it consists of a sequence of three monadic instructions:
--- `verb`, `plular` and `subcat`.  While `verb` and `plural` are simple
--- monadic computations, `subcat` is a complex one and it requires an
--- argument which is a monadic computation itself!
-
-love = do
-    verb >> plural
-    subcat $ do
-        leaf "cat" "np"
-        leaf "case" "acc"
-
--- In principle, we would like to abstract over the form of the individual
--- arguments of the subsequent instructions.  We don't care how the
--- subcategorization frame looks, because it doesn't really have any
--- influence on how the feature node of `love` will be constructed!
---
--- There's really nothing more to it!  Lets look at another example,
--- which should have more or less the same semantics:
-
-love = do
-    verb >> plural
-    x <- do
-        leaf "cat" "np"
-        leaf "case" "acc"
-    subcat x
-
--- Yet there's a significant difference here: the argument of subcat
--- is no longer a monadic computation.
-
-
 --------------------------------------------------------------------
--- ???????????????
+-- AVM Monad
 --------------------------------------------------------------------
 
 
-single :: FeatMonad AVM -> 
+-- | A monad providing convenient syntax for defining feature trees.
+newtype AVMM i f a b = AVMM { unAVM :: S.State (T.FN i f a) b }
+    deriving (Monad, S.MonadState (T.FN i f a))
 
 
--- | The only instruction of our language is an introduction
--- of an attribute with a corresponding value, really.
--- However, there's a trick: a value of an attribute will
--- usually be a monadic computation itself!
-data AVM a next = Attr a next
+-- -- | A monad providing convenient syntax for defining feature trees.
+-- newtype AVMM i f a b = AVMM { unAVM :: S.State (AVMS i f a) b }
+--     deriving (Monad, S.MonadState (AVMS i f a))
 
 
+-- | Convenient type alias that will probably be used most of the time.
+type AVM i f a = AVMM i f a ()
 
 
+-- | If the string is empty, it represents an `empty` tree.
+-- If the string starts with '?', it represents a `label`.
+-- Otherwise, it represents a `atom`.
+instance (IsString i, IsString a) => IsString (AVM i f a) where
+    fromString = S.put . fromString
 
 
--- | A feature monad can be used to define a `FS` in a monadic fashion.
--- TODO: Implement.
-data FM a = undefined
-instance Functor FM where
-instance Monad FM where
+-- | Run the AVMM monad and return a feature tree.
+avm :: AVMM i f a b -> T.FN i f a
+avm m = S.execState (unAVM m) T.empty
 
 
--- | Parse the feature-structure expression.
-runFM :: FM i f a b -> FS i f a
-runFM = undefined
+--------------------------------------------------------------------
+-- Core AVM combinators
+--------------------------------------------------------------------
 
 
--- | An atomic value.
-atom :: a -> FM i f a (FV i f a)
-atom = return . Atom
+-- | An empty tree.  It is equivalent to `return ()`, so when used
+-- in combination with other AVM builders (`atom` or `feat`) it will
+-- be ignored.
+empty :: AVM i f a
+empty = return ()
 
 
--- | An atomic value.
-atom :: a -> FM i f a (FV i f a)
-atom = return . Atom
+-- | An atomic value.  Overwrites previous `atom` and `feat` definitions.
+atom :: a -> AVM i f a
+atom x = S.modify $ \s -> s { T.val = T.Atom x }
 
 
--- -- | An attribute.
--- attr :: f -> a -> FV i f a
--- attr = 
+-- | Ad an identifier to a feature tree.
+label :: i -> AVM i f a
+label x = S.modify $ \s -> s { T.ide = Just x }
+
+
+-- | Forces a subtree to be added.  If the feature already exists,
+-- its value is overwritten.
+feat :: Ord f => f -> AVM i f a  -> AVM i f a
+feat x y = S.modify $ \s -> case T.val s of
+    T.Atom _ -> s { T.val = T.Subs $ M.singleton x $ avm y }
+    T.Subs m -> s { T.val = T.Subs $ M.insert x (avm y) m }
+
+
+-- -- | Forces a subtree to be added.  If the feature already exists,
+-- -- its value is overwritten.
+-- feat :: Ord f => f -> FN i f a  -> AVM i f a
+-- feat ft fn = S.modify $ \s -> s { avmAV = M.insert ft fn (avmAV s) }
 -- 
 -- 
--- -- | An atomic value.
--- leaf :: a -> FV i f a
--- leaf = 
+-- -- | Assign the name to the AVM.  If the lable already exists,
+-- -- its value is overwritten.
+-- nameAVM :: i -> AVM i f a
+-- nameAVM x = S.modify $ \s -> s { avmID = Just x }
 
 
+--------------------------------------------------------------------
+-- Other AVM combinators
+--------------------------------------------------------------------
 
 
-
-
-
-
--- --------------------------------------------------------------------
--- -- AVM Monads
--- --------------------------------------------------------------------
--- 
--- 
--- -- | The state of the AVM monad.
--- data AVS a = AVS {
---     -- | 
--- 
--- 
--- --------------------------------------------------------------------
--- -- Core
--- --------------------------------------------------------------------
--- 
--- 
--- -- | An atomic value.
--- atom :: Eq a => a -> AVM (?)
--- atom = undefined
--- 
--- 
--- 
--- --------------------------------------------------------------------
--- -- Misc
--- --------------------------------------------------------------------
--- 
--- 
 -- -- | An atomic value assigned to a feature.
--- leaf x y = attr x $ atom y
--- 
--- 
--- 
--- --------------------------------------------------------------------
--- -- Example grammar: lexicon
--- --------------------------------------------------------------------
--- 
--- 
--- sleep = do
---     verb >> plural
---     subcat nil
--- 
--- 
--- love = do
---     verb >> plural
---     subcat $ single $ do
---         leaf "cat" "np"
---         leaf "case" "acc"
--- 
--- 
--- tell = do
---     verb >> plural
---     subcat $ list
---         [ do
---             leaf "cat" "np"
---             leaf "case" "acc"
---         , leaf "cat" "s" ]
--- 
--- 
--- lamb = noun >> singular
--- lambs = noun >> plural
--- she = pron >> singular >> nominative
--- her = pron >> singular >> accusative
--- 
--- 
--- --------------------------------------------------------------------
--- -- Example grammar: rules
--- --------------------------------------------------------------------
--- 
--- 
--- -- | In case of rules the task is a bit trickier, since a rule
--- -- has to be represented by a multi-rooted structure.
--- 
--- 
--- sentR = rule $ do
---     head $ leaf "cat" "s"
---     item $ do
---         leaf "cat" "np"
---         attr "num" $ name 1 undef
---         nominative
---     item $ do
---         verb
---         attr "num" $ name 1 undef
---         subcat nul
--- 
--- 
--- consumeR = do
---     item $ do
---         verb
---         attr "num" $ name "number" undef
---         subcat $ name "rest" undef
---     item $ do
---         verb
---         attr "num" $ name "number" undef
---         subcat $ item $ do
---             attr "first" $ name "first" undef
---             attr "rest"  $ name "rest"  undef
---     item $ name "first" undef
---         
--- 
--- --------------------------------------------------------------------
--- -- Example grammar: helpers
--- --------------------------------------------------------------------
--- 
--- -- | Grammatical class.
--- verb = leaf "cat" "v"
--- 
--- 
--- -- | Number.
--- singular = leaf "num" "sg"
--- plural = leaf "num" "pl"
--- 
--- 
--- -- | Case.
--- nominative = leaf "cas" "nom"
--- accusative = leaf "cas" "acc"
--- 
--- 
--- -- | Subcategorization frame.
--- subcat = attr "subcat"
--- 
--- 
--- --------------------------------------------------------------------
--- -- Lists
--- --------------------------------------------------------------------
+-- leaf :: Ord f => f -> a -> AVM i f a
+-- leaf x = feat x . atom
+
+
+-- -- | A list encoded as a named feature structure.
+-- list
+--     :: Ord f
+--     => a            -- ^ An empty list
+--     -> f            -- ^ First feature
+--     -> f            -- ^ Rest feature
+--     -> FF i f a     -- ^ The list to encode
+--     -> FN i f a
+-- list nil first rest ff =
+--     doit ff
+--   where
+--     doit (x:xs) = avm $ do
+--         feat first x
+--         feat rest $ doit xs
+--     doit [] = atom nil
+
+
+-- | A list encoded as a named feature structure.
+list
+    :: Ord f
+    => a            -- ^ An empty list
+    -> f            -- ^ First feature
+    -> f            -- ^ Rest feature
+    -> [AVM i f a]  -- ^ The list to encode
+    -> AVM i f a
+list nil first rest =
+    doit
+  where
+    doit (x:xs) = do
+        first ## x
+        rest ## doit xs
+    doit [] = atom nil
+
+
+--------------------------------------------------------------------
+-- Infix versions of common combinators
+--------------------------------------------------------------------
+
+
+-- | An infix version of `feat`.
+(##) :: Ord f => f -> AVM i f a -> AVM i f a
+(##) = feat
+infixr 0 ##

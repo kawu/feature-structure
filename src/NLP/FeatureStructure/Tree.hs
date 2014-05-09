@@ -1,4 +1,3 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards #-}
 
 
@@ -23,18 +22,6 @@ module NLP.FeatureStructure.Tree
 , compile
 , compiles
 
--- * AVM monad
-, AVMM (..)
-, AVM
-, avm
--- ** Core combinators
-, feat
-, nameAVM
--- ** Other combinators
-, leaf
-, list
--- ** Infix verions
-, (##)
 ) where
 
 
@@ -112,7 +99,7 @@ label :: i -> FN i f a
 label = flip name empty
 
 
--- | Assign name to an `FN`.
+-- | Assign a name to an `FN`.
 name :: i -> FN i f a -> FN i f a
 name i fn = fn { ide = Just i }
 
@@ -235,102 +222,6 @@ addNode :: ID -> G.Node f a -> Con i f a ()
 addNode i = S.lift . J.liftGraph . G.setNode i
 -- addNode x y = S.modify $ \st@ConS{..} ->
 --     st {conR = (x, y) : conR}
-
-
---------------------------------------------------------------------
--- Language
---
--- * Define a monad, which will be used to defina a *single*
---   level of a feature tree.  See e.g. `Heist.SpliceAPI`.
--- * A monad for every node in a tree will be evaluated once.
---   We don't need a monad which would work over the entire
---   tree structure.
--- * Some of the functions used to define attributes will
---   take a monadic action as an argument and, simply,
---   evaluate it before taking the result into accout.
--- * Potential problem: what if there are functions, which
---   should accept both pure and monadic arguments?  Well,
---   we could use `return` of course, but that doesn't seem
---   a very elegant solution.
---------------------------------------------------------------------
-
-
--- | A monad providing convenient syntax for defining feature trees.
-newtype AVMM i f a b = AVMM { unAVM :: S.State (AVMS i f a) b }
-    deriving (Monad, S.MonadState (AVMS i f a))
-
-
--- | An AVM state.
-data AVMS i f a = AVMS {
-    -- | An identifier of the AVM.
-      avmID :: Maybe i
-    -- | An attribute-value map.
-    , avmAV :: AV i f a }
-
-
--- | Convenient type alias that will probably be used most of the time.
-type AVM i f a = AVMM i f a ()
-
-
--- | Run the AVMM monad and return a feature tree.
-avm :: AVMM i f a b -> FN i f a
-avm m =
-    let AVMS{..} = S.execState (unAVM m) (AVMS Nothing M.empty)
-    in  FN avmID $ Subs avmAV
-
-
---------------------------------------------------------------------
--- Core AVM combinators
---------------------------------------------------------------------
-
-
--- | Forces a subtree to be added.  If the feature already exists,
--- its value is overwritten.
-feat :: Ord f => f -> FN i f a  -> AVM i f a
-feat ft fn = S.modify $ \s -> s { avmAV = M.insert ft fn (avmAV s) }
-
-
--- | Assign the name to the AVM.  If the lable already exists,
--- its value is overwritten.
-nameAVM :: i -> AVM i f a
-nameAVM x = S.modify $ \s -> s { avmID = Just x }
-
-
---------------------------------------------------------------------
--- Other AVM combinators
---------------------------------------------------------------------
-
--- | An atomic value assigned to a feature.
-leaf :: Ord f => f -> a -> AVM i f a
-leaf x = feat x . atom
-
-
--- | A list encoded as a named feature structure.
-list
-    :: Ord f
-    => a            -- ^ An empty list
-    -> f            -- ^ First
-    -> f            -- ^ Rest
-    -> FF i f a     -- ^ The list to encode
-    -> FN i f a
-list nil first rest ff =
-    doit ff
-  where
-    doit (x:xs) = avm $ do
-        feat first x
-        feat rest $ doit xs
-    doit [] = atom nil
-
-
---------------------------------------------------------------------
--- Infix versions of common combinators
---------------------------------------------------------------------
-
-
--- | An infix version of `feat`.
-(##) :: Ord f => f -> FN i f a  -> AVM i f a
-(##) = feat
-infixr 0 ##
 
 
 --------------------------------------------------------------------
