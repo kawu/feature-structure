@@ -10,6 +10,9 @@ module NLP.FeatureStructure.Parse.Tests
 , sleepsL
 , loveL
 , lovesL
+, kickL
+, kicksL
+, kickedL
 , eatL
 , eatsL
 , tellL
@@ -17,17 +20,26 @@ module NLP.FeatureStructure.Parse.Tests
 , lookL
 , looksL
 
--- ** Other
+-- ** Misc
 , lambL
 , lambsL
+, bucketL
+, bucketsL
 , sheL
 , herL
 , rachelL
 , jacobL
 , aL
+, theL
+, someL
 , twoL
 , atL
 , upL
+
+-- ** Adjectives
+, whiteL
+, slowL
+, proverbialL
 
 
 -- * Rules
@@ -82,10 +94,12 @@ catl = cat . atom
 
 -- | Grammatical classes in our toy grammar.
 sent, verb, determiner, noun, pronoun, nounPhrase, properName :: AVM
-sent = catl "s"
-verb = catl "v"
-noun = catl "n"
-prep = catl "prep"
+sent = catl "s"     -- sentence
+verb = catl "v"     -- verb
+noun = catl "n"     -- noun
+prep = catl "prep"  -- preposition
+adj = catl "adj"    -- adjective
+adv = catl "adv"    -- adverb
 pronoun = catl "pron"
 determiner = catl "d"
 nounPhrase = catl "np"
@@ -174,6 +188,26 @@ sleepsL = do
     frame []
 
 
+kickL :: AVM
+kickL = do
+    orth "kick" >> lemma "kick"
+    verb >> plural
+    frame [nounPhrase >> accusative]
+
+
+kickedL :: AVM
+kickedL = do
+    verb >> orth "kicked" >> lemma "kick"
+    frame [nounPhrase >> accusative]
+
+
+kicksL :: AVM
+kicksL = do
+    orth "kicks" >> lemma "kick"
+    verb >> singular
+    frame [nounPhrase >> accusative]
+
+
 loveL :: AVM
 loveL = do
     orth "love" >> lemma "love"
@@ -235,7 +269,7 @@ looksL = do
 
 
 --------------------------------------------------------------------
--- Lexicon: other
+-- Lexicon: misc
 --------------------------------------------------------------------
 
 
@@ -245,6 +279,14 @@ lambL = noun >> singular >> orth "lamb"
 
 lambsL :: AVM
 lambsL = noun >> plural >> orth "lambs"
+
+
+bucketL :: AVM
+bucketL = noun >> singular >> orth "bucket" >> lemma "bucket"
+
+
+bucketsL :: AVM
+bucketsL = noun >> plural >> orth "buckets" >> lemma "bucket"
 
 
 sheL :: AVM
@@ -264,11 +306,19 @@ jacobL = properName >> singular >> orth "jacob"
 
 
 aL :: AVM
-aL = determiner >> singular >> orth "a"
+aL = determiner >> singular >> orth "a" >> lemma "a"
+
+
+theL :: AVM
+theL = determiner >> singular >> orth "the" >> lemma "the"
+
+
+someL :: AVM
+someL = determiner >> plural >> orth "some" >> lemma "some"
 
 
 twoL :: AVM
-twoL = determiner >> plural >> orth "two"
+twoL = determiner >> plural >> orth "two" >> lemma "two"
 
 
 atL :: AVM
@@ -277,6 +327,23 @@ atL = prep >> orth "at" >> lemma "at"
 
 upL :: AVM
 upL = prep >> orth "up" >> lemma "up"
+
+
+--------------------------------------------------------------------
+-- Lexicon: adjectives
+--------------------------------------------------------------------
+
+
+whiteL :: AVM
+whiteL = adj >> orth "white" >> lemma "white"
+
+
+slowL :: AVM
+slowL = adj >> orth "slow" >> lemma "slow"
+
+
+proverbialL :: AVM
+proverbialL = adj >> orth "proverbial" >> lemma "proverbial"
 
 
 --------------------------------------------------------------------
@@ -318,6 +385,16 @@ subcatR = mkR "subcatR"
     , label "?x" ]
 
 
+-- | N -> Adj + N
+--
+-- Note, that the lemma feature of the complex noun is in fact
+-- the base form of the its head.
+nounAdjNounR :: Rule
+nounAdjNounR = mkR "nounAdjNounR"
+    (noun >> num "?num" >> lemma "?lemma")
+    [adj, noun >> num "?num" >> lemma "?lemma"]
+
+
 -- | NP -> D + N
 npDetNounR :: Rule
 npDetNounR = mkR "npDetNounR" hd bd where
@@ -350,7 +427,9 @@ npPropNameR = mkR "npPropNameR"
 
 -- | All rules of the grammar.
 ruleSet :: [Rule]
-ruleSet = [sentR, vpVerbR, npDetNounR, npPlNounR, npPronR, npPropNameR, subcatR]
+ruleSet =
+    [ sentR, vpVerbR, npDetNounR, npPlNounR, npPronR, npPropNameR
+    , subcatR, nounAdjNounR ]
 
 
 --------------------------------------------------------------------
@@ -370,11 +449,21 @@ ruleSet = [sentR, vpVerbR, npDetNounR, npPlNounR, npPronR, npPropNameR, subcatR]
 --
 -- Comments:
 --
--- * MWE rules can be fired up only when corresponding "anchors"
---   are present in the text and satisfy particular conditions
---   (this is not implemented).
+-- * Valency frames of the sub-elements of MWE rules may not be consumed
+--   in idiomatic interpretations.  For example, `kick` in `kickTheBucketR`.
 -- * We have to declare empty subcategorization frames in the heads
 --   of the rules.  Otherwise, the verb would accept any given argument.
+-- * MWE rules can be fired up only when corresponding "anchors"
+--   are present in the text and satisfy particular conditions
+--   (this is not implemented yet, though).
+-- * We could probably make use of the idea of tree families.  For
+--   example, to describe the "kick the bucket" idiom, we could
+--   construct an appropriate tree family and instantiate it with
+--   appropriate anchors occuring in the idiom.
+--
+-- Questions:
+--
+-- * Is the idea of tree families really useful within the context of MWEs?
 --------------------------------------------------------------------
 
 
@@ -408,8 +497,32 @@ lookUpR = mkR "lookUpR"
     , prep >> lemma "up" ]
 
 
+-- | Verbal(?) idiom "kick the bucket".
+--
+-- The rule does not cover:
+-- * "NP will kick the bucket in a few days"
+--   <- Unless "will kick" can be treated as a verb?
+--
+-- The rule allows:
+-- * "I would like him to kick the bucket"
+-- * Any adjectival modifier of the embedded noun ("bucket"),
+--   in accordance with general rules.  In order to block
+--   some modifications, we would need access to the modifier
+--   of the "bucket" (but the same applies to TAGs?).
+--   In order to block all modifications we would need to be
+--   able to distinguish nouns from modified nouns.
+-- * Any tense of the "kick" verb.
+kickTheBucketR :: Rule
+kickTheBucketR = mkR "kickTheBucketR"
+    ( verbPhrase >> num "?num" >> frame [] )
+    -- [ nounPhrase >> nominative >> num "?num"
+    [ verb >> lemma "kick" >> num "?num"
+    , determiner >> lemma "the"
+    , noun >> singular >> lemma "bucket" ]
+
+
 mweSet :: [Rule]
-mweSet = [lookAtR, lookUpR]
+mweSet = [lookAtR, lookUpR, kickTheBucketR]
 -- mweSet = []
 
 
