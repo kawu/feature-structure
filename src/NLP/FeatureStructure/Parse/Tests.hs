@@ -201,6 +201,12 @@ kickedL = do
     frame [nounPhrase >> accusative]
 
 
+kicked'L :: AVM
+kicked'L = do
+    verb >> orth "kicked" >> lemma "kick"
+    frame [nounPhrase >> accusative]
+
+
 kicksL :: AVM
 kicksL = do
     orth "kicks" >> lemma "kick"
@@ -382,7 +388,7 @@ subcatR :: Rule
 subcatR = mkR "subcatR"
     ( verbPhrase >> num "?num" >> subcat "?xs" )
     [ verbPhrase >> num "?num" >> subcat (first "?x" >> rest "?xs")
-    , label "?x" ]
+    , "?x" ]
 
 
 -- | N -> Adj + N
@@ -515,9 +521,10 @@ lookUpR = mkR "lookUpR"
 kickTheBucketR :: Rule
 kickTheBucketR = mkR "kickTheBucketR"
     ( verbPhrase >> num "?num" >> frame [] )
-    -- [ nounPhrase >> nominative >> num "?num"
+    -- [ verb >> lemma "kick" >> num "?num" >> frame ["?x1"]
     [ verb >> lemma "kick" >> num "?num"
     , determiner >> lemma "the"
+    -- , nounPhrase >> singular >> lemma "bucket" >> "?x1" ]
     , noun >> singular >> lemma "bucket" ]
 
 
