@@ -18,12 +18,14 @@ module NLP.FeatureStructure.AVM
 , atom
 , label
 , feat
+, tryFeat
 
 -- * List combinators
 , list
 
 -- * Infix verions
 , (##)
+, (#?)
 ) where
 
 
@@ -96,6 +98,14 @@ feat x y = S.modify $ \s -> case T.val s of
     T.Subs m -> s { T.val = T.Subs $ M.insert x (avm y) m }
 
 
+-- Inserts into the map only if the feature does not already exist.
+tryFeat :: Ord f => f -> AVM i f a  -> AVM i f a
+tryFeat x y = S.modify $ \s -> case T.val s of
+    T.Atom _ -> s { T.val = T.Subs $ M.singleton x $ avm y }
+    T.Subs m -> s { T.val = T.Subs $ M.insertWith const2 x (avm y) m }
+    where const2 _ = id
+
+
 -- -- | Forces a subtree to be added.  If the feature already exists,
 -- -- its value is overwritten.
 -- feat :: Ord f => f -> FN i f a  -> AVM i f a
@@ -161,3 +171,9 @@ list nil first rest =
 (##) :: Ord f => f -> AVM i f a -> AVM i f a
 (##) = feat
 infixr 0 ##
+
+
+-- | An infix version of `tryFeat`.
+(#?) :: Ord f => f -> AVM i f a -> AVM i f a
+(#?) = tryFeat
+infixr 0 #?

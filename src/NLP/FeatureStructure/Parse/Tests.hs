@@ -14,6 +14,8 @@ module NLP.FeatureStructure.Parse.Tests
 , eatsL
 , tellL
 , tellsL
+, lookL
+, looksL
 
 -- ** Other
 , lambL
@@ -24,6 +26,8 @@ module NLP.FeatureStructure.Parse.Tests
 , jacobL
 , aL
 , twoL
+, atL
+, upL
 
 
 -- * Rules
@@ -43,7 +47,7 @@ import qualified Data.Vector as V
 
 
 import           NLP.FeatureStructure.AVM
-    (avm, empty, atom, label, feat, list)
+    (avm, empty, atom, label, feat, tryFeat, list, (##), (#?))
 import qualified NLP.FeatureStructure.AVM as A
 import qualified NLP.FeatureStructure.Tree as R
 import qualified NLP.FeatureStructure.Graph as G
@@ -62,6 +66,7 @@ import qualified NLP.FeatureStructure.Reid as Reid
 -- type FN = A.FN Text Text Text
 -- type AV = A.AV Text Text Text
 type AVM = A.AVM Text Text Text
+type Rule = P.Rule Text Text
 
 
 --------------------------------------------------------------------
@@ -80,9 +85,11 @@ sent, verb, determiner, noun, pronoun, nounPhrase, properName :: AVM
 sent = catl "s"
 verb = catl "v"
 noun = catl "n"
+prep = catl "prep"
 pronoun = catl "pron"
 determiner = catl "d"
 nounPhrase = catl "np"
+verbPhrase = catl "vp"
 properName = catl "propn"
 
 
@@ -109,8 +116,18 @@ accusative = casl "acc"
 
 
 -- | Orth.
-orth :: Text -> AVM
-orth = feat "orth" . atom
+orth :: AVM -> AVM
+orth = feat "orth"
+
+
+-- | Lemma.
+lemma :: AVM -> AVM
+lemma = feat "lemma"
+
+
+-- | Set lemma if not present.
+tryLemma :: AVM -> AVM
+tryLemma = tryFeat "lemma"
 
 
 --------------------------------------------------------------------
@@ -134,8 +151,8 @@ rest = feat "rest"
 
 
 -- | Make subcategorization frame from a list of `AVM`s.
-subcatFrame :: [AVM] -> AVM
-subcatFrame = subcat . list "nil" "first" "rest"
+frame :: [AVM] -> AVM
+frame = subcat . list "nil" "first" "rest"
 
 
 --------------------------------------------------------------------
@@ -145,58 +162,76 @@ subcatFrame = subcat . list "nil" "first" "rest"
 
 sleepL :: AVM
 sleepL = do
-    orth "sleep"
+    orth "sleep" >> lemma "sleep"
     verb >> plural
-    subcatFrame []
+    frame []
 
 
 sleepsL :: AVM
 sleepsL = do
-    orth "sleeps"
+    orth "sleeps" >> lemma "sleep"
     verb >> singular
-    subcatFrame []
+    frame []
 
 
 loveL :: AVM
 loveL = do
-    orth "love"
+    orth "love" >> lemma "love"
     verb >> plural
-    subcatFrame [nounPhrase >> accusative]
+    frame [nounPhrase >> accusative]
 
 
 lovesL :: AVM
 lovesL = do
-    orth "loves"
+    orth "loves" >> lemma "love"
     verb >> singular
-    subcatFrame [nounPhrase >> accusative]
+    frame [nounPhrase >> accusative]
 
 
 eatL :: AVM
 eatL = do
-    orth "eat"
+    orth "eat" >> lemma "eat"
     verb >> plural
-    subcatFrame [nounPhrase >> accusative]
+    frame [nounPhrase >> accusative]
 
 
 eatsL :: AVM
 eatsL = do
-    orth "eats"
+    orth "eats" >> lemma "eat"
     verb >> singular
-    subcatFrame [nounPhrase >> accusative]
+    frame [nounPhrase >> accusative]
 
 
 tellL :: AVM
 tellL = do
-    orth "tell"
+    orth "tell" >> lemma "tell"
     verb >> plural
-    subcatFrame [nounPhrase >> accusative, sent]
+    frame [nounPhrase >> accusative, sent]
 
 
 tellsL :: AVM
 tellsL = do
-    orth "tells"
+    orth "tells" >> lemma "tell"
     verb >> singular
-    subcatFrame [nounPhrase >> accusative, sent]
+    frame [nounPhrase >> accusative, sent]
+
+
+-- | An "unidiomatic" interpretation of the word "look".  No required
+-- arguments?  See also entries in the MWEs section.
+lookL :: AVM
+lookL = do
+    orth "look" >> lemma "look"
+    verb >> plural
+    frame []
+
+
+-- | An "unidiomatic" interpretation of the word "look".  No required
+-- arguments?  See also entries in the MWEs section.
+looksL :: AVM
+looksL = do
+    orth "looks" >> lemma "look"
+    verb >> singular
+    frame []
 
 
 --------------------------------------------------------------------
@@ -236,13 +271,21 @@ twoL :: AVM
 twoL = determiner >> plural >> orth "two"
 
 
+atL :: AVM
+atL = prep >> orth "at" >> lemma "at"
+
+
+upL :: AVM
+upL = prep >> orth "up" >> lemma "up"
+
+
 --------------------------------------------------------------------
--- Rules
+-- Abstract rules of the grammar
 --------------------------------------------------------------------
 
 
 -- | Construct a rule with the given head and the given body.
-mkR :: String -> AVM -> [AVM] -> P.Rule Text Text
+mkR :: String -> AVM -> [AVM] -> Rule
 mkR ruleName x xs = unjust ruleName $ do
     (is, g) <- R.compiles $ map avm (x:xs)
     (rh, rb) <- unCons is
@@ -250,22 +293,33 @@ mkR ruleName x xs = unjust ruleName $ do
 
 
 -- | A sentence rule.
-sentR :: P.Rule Text Text
+sentR :: Rule
 sentR = mkR "sentR" sent
     [ nounPhrase >> nominative >> num "?num"
-    , verb >> subcatFrame [] >> num "?num" ]
+    , verbPhrase >> frame [] >> num "?num" ]
+
+
+-- | VP -> V
+--
+-- We need VPs to be able to refer to elementary/token verbs only
+-- (see the `lookAtR` rule).
+vpVerbR :: Rule
+vpVerbR = mkR "vpVerbR" hd bd where
+    uni = num "?num" >> subcat "?xs"
+    hd = verbPhrase >> uni
+    bd = [verb >> uni]
 
 
 -- | Subcategorization resolution.
-subcatR :: P.Rule Text Text
+subcatR :: Rule
 subcatR = mkR "subcatR"
-    ( verb >> num "?num" >> subcat "?xs" )
-    [ verb >> num "?num" >> subcat (first "?x" >> rest "?xs")
+    ( verbPhrase >> num "?num" >> subcat "?xs" )
+    [ verbPhrase >> num "?num" >> subcat (first "?x" >> rest "?xs")
     , label "?x" ]
 
 
 -- | NP -> D + N
-npDetNounR :: P.Rule Text Text
+npDetNounR :: Rule
 npDetNounR = mkR "npDetNounR" hd bd where
     hd = nounPhrase >> num "?num" >> cas "?case"
     bd = [ determiner >> num "?num"
@@ -273,21 +327,21 @@ npDetNounR = mkR "npDetNounR" hd bd where
 
 
 -- | NP -> N (plural)
-npPlNounR :: P.Rule Text Text
+npPlNounR :: Rule
 npPlNounR = mkR "npPlNounR"
     (nounPhrase >> plural >> cas "?case")
     [noun >> plural >> cas "?case"]
 
 
 -- | NP -> Pronoun
-npPronR :: P.Rule Text Text
+npPronR :: Rule
 npPronR = mkR "npPronR" 
     (nounPhrase >> num "?num" >> cas "?case")
     [pronoun >> num "?num" >> cas "?case"]
 
 
 -- | NP -> Proper name
-npPropNameR :: P.Rule Text Text
+npPropNameR :: Rule
 npPropNameR = mkR "npPropNameR"
     (nounPhrase >> numCas)
     [properName >> numCas]
@@ -295,8 +349,68 @@ npPropNameR = mkR "npPropNameR"
 
 
 -- | All rules of the grammar.
-ruleSet :: [P.Rule Text Text]
-ruleSet = [sentR, npDetNounR, npPlNounR, npPronR, npPropNameR, subcatR]
+ruleSet :: [Rule]
+ruleSet = [sentR, vpVerbR, npDetNounR, npPlNounR, npPronR, npPropNameR, subcatR]
+
+
+--------------------------------------------------------------------
+-- MWE rules
+--
+-- MWEs can be represented at the level of the grammar rules.
+--
+-- Assumptions:
+--
+-- * There is a separate level of tokens, with distinct set of classes,
+--   to which MWE rules refer.  It simplifies writing rules, because we
+--   don't have to worry about potential unification of the body elements
+--   with complex phrases.
+-- * By refering to lemmas we actually want to refer to specific tokens.
+--   At this point we assume, that a lexeme can be uniquely identified
+--   given it's base form.
+--
+-- Comments:
+--
+-- * MWE rules can be fired up only when corresponding "anchors"
+--   are present in the text and satisfy particular conditions
+--   (this is not implemented).
+-- * We have to declare empty subcategorization frames in the heads
+--   of the rules.  Otherwise, the verb would accept any given argument.
+--------------------------------------------------------------------
+
+
+-- | Phrasal verb "look at".
+lookAtR :: Rule
+lookAtR = mkR "lookAtR"
+    ( verbPhrase >> num "?num" >> frame [] )
+    [ verb >> lemma "look" >> num "?num"
+    , prep >> lemma "at"
+    , nounPhrase >> accusative ]
+-- -- | Phrasal verb "look at"; version with subcat frame.
+-- lookAtR' :: Rule
+-- lookAtR' = mkR "lookAtR" hd [x1, x2] where
+--     x1 = verb >> lemma "look" >> num "?num"
+--     x2 = prep >> lemma "at"
+--     hd = do
+--         verbPhrase >> num "?num"
+--         frame [nounPhrase >> accusative]
+
+
+-- | For example, "look the word up [in the dictionary]".
+-- We have to handle the NP argument of the verb directly within
+-- the body of the rule.
+-- TODO: perhaps we would like to handle a less correct(?) version,
+-- "look up the word", as well?
+lookUpR :: Rule
+lookUpR = mkR "lookUpR"
+    ( verbPhrase >> num "?num" >> frame [] )
+    [ verb >> lemma "look" >> num "?num"
+    , nounPhrase >> accusative
+    , prep >> lemma "up" ]
+
+
+mweSet :: [Rule]
+mweSet = [lookAtR, lookUpR]
+-- mweSet = []
 
 
 --------------------------------------------------------------------
@@ -322,16 +436,17 @@ unCons []     = Nothing
 
 
 -- | A simplified parsing function.
-parse :: [AVM] -> [P.Rule Text Text]
+parse :: [AVM] -> [Rule]
 parse sent = parse' sent 0 (length sent)
 
 
 -- | A simplified parsing function.
-parse' :: [AVM] -> Int -> Int -> [P.Rule Text Text]
+parse' :: [AVM] -> Int -> Int -> [Rule]
 -- parse' sent = filter P.isFull $
 parse' sent =
-    P.parse ruleSet $ map (compileEntry . avm) sent
+    P.parse rules $ map (compileEntry . avm) sent
   where
+    rules = ruleSet ++ mweSet
     compileEntry fn = unjust ("compileEntry: " ++ show fn) $ do
         (i, g) <- R.compile fn
         return $ P.mkEntry i g

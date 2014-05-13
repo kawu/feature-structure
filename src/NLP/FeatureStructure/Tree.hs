@@ -68,14 +68,19 @@ data FN i f a = FN {
 type FF i f a = [FN i f a]
 
 
--- | If the string is empty, it represents an `empty` tree.
--- If the string starts with '?', it represents a `label`.
+-- | If the string starts with '?', it represents a `label`.
 -- Otherwise, it represents a `atom`.
 instance (IsString i, IsString a) => IsString (FN i f a) where
     fromString xs = case xs of
-        []      -> empty
         ('?':_) -> label $ fromString xs
         _       -> atom $ fromString xs
+--     fromString xs = case xs of
+--         []      -> empty
+--         ('?':_) -> label $ fromString xs
+--         _       -> atom $ fromString xs
+-- -- | If the string is empty, it represents an `empty` tree.
+-- -- If the string starts with '?', it represents a `label`.
+-- -- Otherwise, it represents a `atom`.
 
 
 --------------------------------------------------------------------
