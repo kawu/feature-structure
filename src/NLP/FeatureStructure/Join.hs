@@ -57,7 +57,7 @@ type JoinT f a m =
     (GraphT f a m))
 
 
--- | The join monad overt identity monad.
+-- | The join monad over the identity monad.
 type Join f a = JoinT f a Identity
 
 
