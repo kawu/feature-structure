@@ -37,11 +37,20 @@ of atomic values).
 >   | ExPath  [Feat]        -- ^ existential equation
 >   | NexPath [Feat]        -- ^ negative existential equation
 
+
+
+> -- >>>>>>>>>>>>>>>>>>>
+> -- BOOLEAN EXPRESSIONS
+> -- >>>>>>>>>>>>>>>>>>>
+
+
+
 Furthermore, it is possible to build logical expressions over equations.
 It is quite a tricky case.  
 
+> -- something like this, at least:
 > data LexDesc = BExpr Path
-> data BExpr a  -- something like this, at least
+> data BExpr a  
 >   = BAnd (BExpr a) (BExpr a)
 >   | BOr  (BExpr a) (BExpr a)
 >   | BAtom a
@@ -57,13 +66,73 @@ Let's consider a simple disjunction of two equations, A | B.  In this case
 either A or B must be satisfied (but not both).  The interpretation of
 disjunctions w.r.t. coreferences is not obvious -- it may be that a given FS
 satisfies both A and B, but from its unification with either A or B arise
-different (and perhaps incompatible!) structures.  The principled solutions
+different (and perhaps incompatible!) structures.  The principled solution
 seems to be to consider all the disjunction elements and for each element
-create a resulting FS.  The scope of coreferences shoud be then limitied to
-individual elements (since only one of them needs to be satisfied).  Or maybe
-a more principled idea would be to consider all the This leads us to another
-issue -- even if A is compatible with the given FS, the result of A <-> FS
-unification may be discarded in the later phases of the parsing process!
+create a resulting FS (if possible).  The scope of coreferences shoud be then
+limitied to individual elements (since only one of them needs to be satisfied).
+This leads us to another question -- what if in the set of results (trees with
+corresponding FSs) there are two elements constructed through the use of the
+two elements of the same disjuntive rule?  It seems highly unresonable.  The
+reasonable solution, then, would be to consider individual disjunction elements
+in a sequential manner.  In other words, we would like to apply the following
+rule: as long as the A element is not discarded in the parsing process, do not
+consider using the B element form the A | B rule.  The is still not very
+precise, though, A can be discarded in some "parsing paths" but not in others.
+For now, it seems easier to consider every element of any given disjunctive
+rule.
+
+COROLLARY: For a given disjunctive rule of the A_1 | A_2 | ... form we
+consider individually each element of the rule and use it to construct
+a separate version of the resultant graph.  Note, however, that in the
+final version of the parsing algorithm this should be improved.
+
+NOTE: It seems that it doesn't make sense to convert a general logical formula
+into a disjunctive normal form because, in the general case, it can lead to an
+exponential explosion of the size of the formula.  Therefore, it seems more
+reasonable to stay with the formula given in the grammar and try to interpret
+it more or less directly.
+
+QUESTION: Let's consider a simple ((A | B) & C) formula.  We can either
+interpret it sequentially and first try A & C and only then B & C.
+Alternatively, we could check the compatibility of the structure with C and
+only afterwards try A and (if necessary) B.  It can be an important
+improvement in some cases, but wheter or not such permutation should be allowed
+to be performed by the compiler is not clear.
+
+COROLLARY: For the ((A | B) & C) the "paths" will be considered in the given
+order.  In other words, we will not consider (at this point) optimizations of
+the compiler which automatically try to find the best permutation (and change,
+for example, the given formula into (C & (A | B))).
+
+How could we interpret a boolean expression in the general case?  The boolean
+expression can be represented as a tree where each level represents,
+alternately, a conjunction and a disjunction.  The tree is traversed in a given
+order (to be decided) and at each node representing a disjunction, a copy of
+the currently considered FS has to be copied for each of its daughter nodes.
+
+NOTE: All is probably simpler for the constraining equations.  They do not
+interact in any way with FSs so there is no need to copy a given FS and create
+a new one.
+
+
+
+> -- >>>>>>>>>>>>>>>>>>>
+> -- REGULAR EXPRESSIONS
+> -- >>>>>>>>>>>>>>>>>>>
+
+
+
+A path in LFG can be any regular equation over features.  The case of
+constraining equations seems not hard to implement, so let's move to defining
+equations.
+
+Let us leave this case for later thoughts...
+
+
+> -- >>>>>>>>>>>>>>>>>>>
+> -- MISC
+> -- >>>>>>>>>>>>>>>>>>>
+
 
 
 CONTROL QUESTIONS: let's say that we have a feature graph G and a set of
