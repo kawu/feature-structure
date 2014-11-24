@@ -126,7 +126,47 @@ A path in LFG can be any regular equation over features.  The case of
 constraining equations seems not hard to implement, so let's move to defining
 equations.
 
-Let us leave this case for later thoughts...
+Quotations from XLE docs:
+* "Kaplan and Zaenen (1989b) assign an existential meaning in this situation"
+* "Functional uncertainties are `nonconstructive`. This means that all of the
+  attributes that are within a regular operator other than concatenation only
+  match against existing attributes in the f-structure, they never construct
+  attributes where none existed before"
+
+From the citations above we can conclude that a general equation with regular
+path over features has an existential meaning in XLE.  Moreover, complex
+regular path-expressions (or, to be more precise, their parts) are
+non-constructuve!  Nevertheless, the right-hand part of the equation (the
+"value") can be defining.
+
+NOTE: When looking at a given FS, it should be remebered that the full form of
+it will be available only after the parsing of a given sentence is finished.
+
+The question is how the "uncertainty" constraints should be stored together
+with regular constraints.  Let's consider a very simple example where there are
+two constraints on a given FS f: ((f A) = x) and ((f A*) = y).  The f feature
+structure can still be extended in the later phases of the parsing process,
+thus we do not know if 'x' should be unified with 'y' or not.  Keep in mind,
+that functional uncertainties have an existential interpretation.  We could,
+in this particular case, decide that ((f A) = x) and ((f A*) = y) unify to
+[(f A) = x ^ y] and [(f A) = x, (f A A*) = y].
+
+COROLLARY: it looks like the unification of two FSs can lead, in the general
+case and in the light of extensions like functional uncertainties, to a set
+of FSs.  The problem is that this can lead to an explosion of the number of FSs
+constructed and stored during the parsing process.
+
+This leads us to another view on feature structures.  They can be seen as
+collections of information and constraints which, finally (when the parsing
+process is finished), lead to a consistent feature graph.  In the meantime,
+though, this property of consistency between individual constraints can be
+impossible to enforce, since some constraints will only have sense when parsing
+is finished.
+
+
+> -- >>>>>>>>>>>>>>>>>>>>>>>>>>>
+> -- NON-DISTRIBUTIVE ATTRIBUTES
+> -- >>>>>>>>>>>>>>>>>>>>>>>>>>>
 
 
 > -- >>>>>>>>>>>>>>>>>>>
