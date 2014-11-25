@@ -72,11 +72,11 @@ create a resulting FS (if possible).  The scope of coreferences shoud be then
 limitied to individual elements (since only one of them needs to be satisfied).
 This leads us to another question -- what if in the set of results (trees with
 corresponding FSs) there are two elements constructed through the use of the
-two elements of the same disjuntive rule?  It seems highly unresonable.  The
+two elements of the same disjuntive rule?  It seems highly unreasonable.  The
 reasonable solution, then, would be to consider individual disjunction elements
 in a sequential manner.  In other words, we would like to apply the following
 rule: as long as the A element is not discarded in the parsing process, do not
-consider using the B element form the A | B rule.  The is still not very
+consider using the B element form the A | B rule.  This is still not very
 precise, though, A can be discarded in some "parsing paths" but not in others.
 For now, it seems easier to consider every element of any given disjunctive
 rule.
@@ -139,6 +139,12 @@ regular path-expressions (or, to be more precise, their parts) are
 non-constructuve!  Nevertheless, the right-hand part of the equation (the
 "value") can be defining.
 
+NOTE: It would be actually easy to implement "regular equations" if only their
+meaning was universal, which is the default way the cycles in feature
+structures are interpreted.  In other words, if the interpretation of the
+kleene stare was universal, we could easly rewrite e.g. ((f A*) = x) as an AVM
+and, therefore, also as a feature graph.
+
 NOTE: When looking at a given FS, it should be remebered that the full form of
 it will be available only after the parsing of a given sentence is finished.
 
@@ -149,12 +155,12 @@ structure can still be extended in the later phases of the parsing process,
 thus we do not know if 'x' should be unified with 'y' or not.  Keep in mind,
 that functional uncertainties have an existential interpretation.  We could,
 in this particular case, decide that ((f A) = x) and ((f A*) = y) unify to
-[(f A) = x ^ y] and [(f A) = x, (f A A*) = y].
+[(f A) = x ^ y] *or* [(f A) = x, (f A A*) = y].
 
-COROLLARY: it looks like the unification of two FSs can lead, in the general
+COROLLARY: It looks like the unification of two FSs can lead, in the general
 case and in the light of extensions like functional uncertainties, to a set
-of FSs.  The problem is that this can lead to an explosion of the number of FSs
-constructed and stored during the parsing process.
+of FSs.  The problem is that this can lead to an explosion of the number of
+FSs constructed and stored during the parsing process.
 
 This leads us to another view on feature structures.  They can be seen as
 collections of information and constraints which, finally (when the parsing
@@ -162,6 +168,30 @@ process is finished), lead to a consistent feature graph.  In the meantime,
 though, this property of consistency between individual constraints can be
 impossible to enforce, since some constraints will only have sense when parsing
 is finished.
+
+Yet we will try to develop a view in which existential equations are consistent
+with the designed formalism and do not require additional parsing phases.
+While it may not lead to a light-speed LFG parser, it will probably help in
+understanding the details of LFG.
+
+Let's note that it is actually possible to convert any existential equation
+into an alternative.  Take ((f A*) = x) for example.  It can be recursively
+translated to (f = x) | ((f A A*) = x) -> (f = x) | ((f A) = x) | ((f A A A*)
+= x) | (...).  Such an alternative is obviously infinite, but it can be
+generated lazily in practice.  Similarly, ((f (A)) = x) /where the feature A
+is optional/ can be compiled to (f = x) | ((f A) = x).
+
+Let's now consider a simple case in which there are two equations assigned to
+a given node: ((f A) = x) and ((f A*) = y) (an example we have already
+considered above).  Now, since we can translate the existential equation to an
+alternative and each element of the alternative is a simple equation, we can
+unify the first equation ((f A) = x) with the generated list and, this way,
+obtain the resulting alternative-feature-structure.  Alternatively, if we
+decide to explicitely represent conjunction, just as we are doing with
+alternative, we could just leave the two equations in a conjunctive relation,
+((f A) = x) && ((f A*) = y), which would probably have positive influence on
+the parsing process (in this case, at least, because the influence in general
+would be hard to determine).
 
 
 > -- >>>>>>>>>>>>>>>>>>>>>>>>>>>
