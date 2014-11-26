@@ -191,11 +191,60 @@ decide to explicitely represent conjunction, just as we are doing with
 alternative, we could just leave the two equations in a conjunctive relation,
 ((f A) = x) && ((f A*) = y), which would probably have positive influence on
 the parsing process (in this case, at least, because the influence in general
-would be hard to determine).
+would be hard to determine).  The problem with such a solution would be that
+there may be coreferences between different equations, so it is not always
+possible to keep them separately.
+
+
+
+> -- >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+> -- INSIDE-OUT FUNCTION APPLICATION
+> -- >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+
+In an inside-out function application, e.g. ((A f) = x), the attribute A is on
+the left of the feature designator f.  What it means is that f is a part of a
+larger feature structure with attribute A leading to f.  This is inverse to the
+idea of equations with regular function applications, e.g. (f A).
+
+It seems that we need to distinguish between edges "leading down" (regular
+function application) and "leading up" (inside-out function application).
+Can these two types of edges co-exist?
+
+First, it is worth noting that such upward edges would have a really special
+role.  Downward edges are part of both a description of constraints to be
+satisfied and the resultant feature structures.  Upward edges, on the other
+hand, serve only as a way to describe constraints, final feature structures do
+not contain such edges.  Nevertheless, we could extend the notion of feature
+structures to contain two types of edges and make the both types first-class
+citizens of the language.
+
+We could even employ a polarization system tp steer the process of edge
+unification (and, possible, value unification too)!  Which is probably a crazy
+idea, so I put it here mainly for a reference.
+
+It is worth noting here that in a multi-feature-graph there may be several
+roots.  In particular, from two different nodes, 'p' and 'q' the same attribute
+can lead to the same node 'n' in the graph.  What if we try to unify 'n' with
+another node which specifies the upward edge with the same attribute -- is it
+going to propagate two both 'p' and 'q' or only one of them,
+non-deterministically?  The default interpretation here should be existential,
+following the LFG docs, but if we work under the scope of negation, the
+interpretation should be changed to universal.  We could generalize this idea
+and allow both interpretations, both within the regular and the negation
+scopes.
 
 
 > -- >>>>>>>>>>>>>>>>>>>>>>>>>>>
-> -- NON-DISTRIBUTIVE ATTRIBUTES
+> -- CONSTRAINING VS DEFINING
+> -- >>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+
+TODO
+
+
+> -- >>>>>>>>>>>>>>>>>>>>>>>>>>>
+> -- RULES
 > -- >>>>>>>>>>>>>>>>>>>>>>>>>>>
 
 
