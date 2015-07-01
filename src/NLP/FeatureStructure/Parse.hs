@@ -350,7 +350,7 @@ parse
     :: (Ord a, Ord f)
     => [Rule f a]       -- ^ Grammar rules (to be reid/instantiated)
     -> [Rule f a]       -- ^ Sentence (to be reid)
-    -> Int -> Int       -- ^ Positions in the sentence
+    -> Int -> Int       -- ^ Positions of the sentence
     -> [Rule f a]
 parse rules sent0 mi mj =
         

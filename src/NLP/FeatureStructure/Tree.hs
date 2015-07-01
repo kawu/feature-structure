@@ -45,10 +45,14 @@ import qualified NLP.FeatureStructure.Join as J
 
 
 -- | An attribute-value map.
+-- * 'i' -- type of identifier
+-- * 'f' -- type of a feature (attribute)
+-- * 'a' -- type of an atomic (leaf) feature value
 type AV i f a = M.Map f (FN i f a)
 
 
--- | A feature tree.
+-- | A feature tree is either an atomic 'Atom a' value or a
+-- sub-attribute-value map.
 data FT i f a
     = Subs (AV i f a)
     | Atom a
