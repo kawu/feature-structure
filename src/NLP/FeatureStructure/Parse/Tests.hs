@@ -534,6 +534,38 @@ mweSet = [lookAtR, lookUpR, kickTheBucketR]
 
 
 --------------------------------------------------------------------
+-- MWE lexical experiments
+--------------------------------------------------------------------
+
+
+doRakWlasnych :: AVM
+doRakWlasnych = do
+    verb >> lemma "doręczyć"
+    mkSpec subj
+    mkComp [obj, objT, rak]
+  where
+    subj = nounPhrase
+    obj  = nounPhrase >> cas dative
+    objT = 
+    rak  = do
+        -- We need to specify "do" as well.
+        ppPhrase >> plural >> lemma "ręka"  -- head' $ lemma "ręka"?
+        adjunct $ lemma "własny"
+
+
+videDetSac :: AVM
+videDetSac = do
+    verb >> lemma "vider"
+    mkSpec subj
+    mkComp [obj]
+  where
+    subj = nounPhrase >> pers "?pers" >> num "?num"
+    obj  = do
+        head' $ lemma "sac"
+        spec  $ determiner >> pers "?pers" >> num "?num"
+
+
+--------------------------------------------------------------------
 -- Misc
 --------------------------------------------------------------------
 
