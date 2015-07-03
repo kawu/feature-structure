@@ -31,6 +31,8 @@ module NLP.FeatureStructure.Graph
 -- * Utility
 , equal
 , equals
+, compare'
+, compares
 , fromTwo
 , printGraph
 , printTree
@@ -45,6 +47,8 @@ import           Control.Monad (forM_, when, guard)
 import           Control.Monad.Identity (Identity)
 import qualified Control.Monad.State.Strict as S
 import           Control.Monad.Trans.Maybe (MaybeT(..))
+-- import           Control.Monad.Trans.Either (EitherT(..))
+import qualified Control.Monad.Trans.Either as E
 import           Control.Monad.Trans.Class (lift)
 
 import qualified Data.Traversable as Tr
@@ -52,7 +56,6 @@ import qualified Data.Map.Strict as M
 import qualified Data.Set as Set
 import qualified Data.IntMap.Strict as I
 import           Data.Maybe (isJust)
-
 
 import           NLP.FeatureStructure.Core
 import qualified NLP.FeatureStructure.DisjSet as D
@@ -148,19 +151,19 @@ equals g h
             j = D.repr j0 $ disjSet h
         -- mark two states as equal; the function returns true
         -- if nodes were not marked as equal earlier
-        b <- markEqual i j
+        b <- lift $ markEqual i j
         when b $ do
             -- this should not actually fail 
             p <- maybeT $ I.lookup i $ nodeMap g
             q <- maybeT $ I.lookup j $ nodeMap h
             check p q
 
-    -- mark two nodes as equal and return info if they were not
-    -- already marked as such (i.e. if marking was effective)
-    markEqual i j = lift $ S.state $ \s ->
-        if Set.member (i, j) s
-            then (False, s)
-            else (True, Set.insert (i, j) s)
+--     -- mark two nodes as equal and return info if they were not
+--     -- already marked as such (i.e. if marking was effective)
+--     markEqual i j = lift $ S.state $ \s ->
+--         if Set.member (i, j) s
+--             then (False, s)
+--             else (True, Set.insert (i, j) s)
         
 
 -- | Check whether the two graphs are equal given node
@@ -173,6 +176,86 @@ equal
     -> ID           -- ^ Node from the second graph
     -> Bool
 equal g i h j = equals g h [(i, j)]
+
+
+-- | Compare two graphs given nodes which should
+-- correspond to each other.
+compares
+    :: (Ord f, Ord a)
+    => Graph f a    -- ^ The first feature graph
+    -> Graph f a    -- ^ The second feature graph
+    -> [(ID, ID)]   -- ^ Nodes from the first and the second graph
+                    --   respectively which should correspond to
+                    --   each other.
+    -> Ordering
+compares g h
+
+    = mkOrd
+    . flip S.evalState Set.empty
+    . E.runEitherT
+    . mapM_ (uncurry checkIDs)
+
+  where
+
+    -- determine the final ordering
+    mkOrd (Left o)  = o
+    mkOrd (Right _) = EQ
+
+    -- compare two nodes; compare with the analog from `equals`:
+    -- here `guard` is replace with `match` while `App.empty`
+    -- had to be avoided
+    check (Interior p) (Interior q) = do
+        match (M.size p) (M.size q)
+        let xs = zip (M.toAscList p) (M.toAscList q)
+        forM_ xs $ \((x, i), (y, j)) -> do
+            match x y
+            checkIDs i j
+    check (Frontier x) (Frontier y) = match x y
+    check (Frontier _) (Interior _) = E.left LT
+    check (Interior _) (Frontier _) = E.left GT
+
+    -- an analog of `guard` for the EitherT monad
+    match x y = case compare x y of
+        EQ -> E.right ()
+        z  -> E.left z
+
+    -- compare two nodes represented by their identifiers;
+    -- note that implementation of this function is very similar
+    -- to the one within `equals`.
+    checkIDs i0 j0 = do
+        -- find representants
+        let i = D.repr i0 $ disjSet g
+            j = D.repr j0 $ disjSet h
+        -- mark two states as equal; the function returns true
+        -- if nodes were not marked as equal earlier
+        b <- lift $ markEqual i j
+        when b $ do
+            -- TODO: well, these should actualy fail with error!
+            p <- maybeE LT $ I.lookup i $ nodeMap g
+            q <- maybeE GT $ I.lookup j $ nodeMap h
+            check p q
+
+
+-- | Compare two graphs given node identifiers which must
+-- correspond to each other.
+compare'
+    :: (Ord f, Ord a)
+    => Graph f a    -- ^ The first feature graph
+    -> ID           -- ^ Node from the first graph
+    -> Graph f a    -- ^ The second feature graph
+    -> ID           -- ^ Node from the second graph
+    -> Ordering
+compare' g i h j = compares g h [(i, j)]
+
+
+-- | Mark two nodes as equal and return info if they were not
+-- already marked as such (i.e. if marking was effective).
+-- A utility function for both `compares` and `equals`.
+markEqual :: ID -> ID -> S.State (Set.Set (ID, ID)) Bool
+markEqual i j = S.state $ \s ->
+    if Set.member (i, j) s
+        then (False, s)
+        else (True, Set.insert (i, j) s)
 
 
 --------------------------------------------------------------------
@@ -314,6 +397,13 @@ printTree Graph{..} =
 -- | Lift a maybe value to a MaybeT transformer.
 maybeT :: Monad m => Maybe a -> MaybeT m a
 maybeT = MaybeT . return
+
+
+-- | Lift a maybe value to a EitherT transformer.
+maybeE :: Monad m => e -> Maybe a -> E.EitherT e m a
+maybeE _ (Just x) = E.right x
+maybeE e Nothing  = E.left e
+
 
 
 -- swap :: (a, b) -> (b, a)

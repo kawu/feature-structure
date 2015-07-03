@@ -89,12 +89,11 @@ reidGraph (g, i) = do
 main = do
     let g1 = mkGraph test1
         g2 = mkGraph test2
-    let equal (g, i) (h, j) = G.equal g i h j
+    let cmp (g, i) (h, j) = G.compare' g i h j
     (h1, h2) <- Reid.runReidT $ (,)
         <$> reidGraph g1
         <*> (Reid.split >> reidGraph g2)
     let printTree = uncurry G.printTree
     printTree h1
     printTree h2
-    print $ equal h1 h2
-    print $ h1 == h2
+    print $ cmp h1 h2
