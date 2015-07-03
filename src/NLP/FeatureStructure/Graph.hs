@@ -78,7 +78,7 @@ data Graph f a = Graph {
     -- | A disjoint-set data structure, which keeps track of
     -- the node merging (in a way). 
     , disjSet   :: D.DisjSet ID
-    } deriving (Show, Eq)
+    } deriving (Show)
 
 
 -- | A node in a feature graph.
