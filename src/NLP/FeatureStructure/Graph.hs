@@ -29,6 +29,8 @@ module NLP.FeatureStructure.Graph
 , remNode
 
 -- * Utility
+, equal
+, equals
 , fromTwo
 , printGraph
 , printTree
@@ -38,13 +40,18 @@ module NLP.FeatureStructure.Graph
 import           Prelude hiding (log)
 
 import           Control.Applicative ((<$>), (<*>))
-import           Control.Monad (forM_)
+import qualified Control.Applicative as App
+import           Control.Monad (forM_, when, guard)
 import           Control.Monad.Identity (Identity)
 import qualified Control.Monad.State.Strict as S
+import           Control.Monad.Trans.Maybe (MaybeT(..))
+import           Control.Monad.Trans.Class (lift)
 
 import qualified Data.Traversable as Tr
 import qualified Data.Map.Strict as M
+import qualified Data.Set as Set
 import qualified Data.IntMap.Strict as I
+import           Data.Maybe (isJust)
 
 
 import           NLP.FeatureStructure.Core
@@ -71,7 +78,7 @@ data Graph f a = Graph {
     -- | A disjoint-set data structure, which keeps track of
     -- the node merging (in a way). 
     , disjSet   :: D.DisjSet ID
-    } deriving (Show, Eq, Ord)
+    } deriving (Show, Eq)
 
 
 -- | A node in a feature graph.
@@ -103,6 +110,69 @@ clean g = fst . flip runGraphM g $ do
     cleanNode (Frontier x) = return $ Frontier x
     -- cleanSnd (x, i) = (x,) <$> getRepr i
 
+
+
+-- | Check whether the two graphs are equal given node
+-- identifiers which must correspond to each other.
+equals
+    :: (Eq f, Eq a)
+    => Graph f a    -- ^ The first feature graph
+    -> Graph f a    -- ^ The second feature graph
+    -> [(ID, ID)]   -- ^ Nodes from the first and the second graph
+                    --   respectively which should correspond to
+                    --   each other.
+    -> Bool
+equals g h
+
+    = isJust
+    . flip S.evalState Set.empty
+    . runMaybeT
+    . mapM_ (uncurry checkIDs)
+
+  where
+
+    -- check that the two nodes are equal
+    check (Interior p) (Interior q) = do
+        guard $ M.size p == M.size q
+        let xs = zip (M.toAscList p) (M.toAscList q)
+        forM_ xs $ \((x, i), (y, j)) -> do
+            guard $ x == y
+            checkIDs i j
+    check (Frontier x) (Frontier y) = guard $ x == y
+    check _ _ = App.empty
+
+    -- check that the two identifiers represent identical nodes
+    checkIDs i0 j0 = do
+        -- find representants
+        let i = D.repr i0 $ disjSet g
+            j = D.repr j0 $ disjSet h
+        -- mark two states as equal; the function returns true
+        -- if nodes were not marked as equal earlier
+        b <- markEqual i j
+        when b $ do
+            -- this should not actually fail 
+            p <- maybeT $ I.lookup i $ nodeMap g
+            q <- maybeT $ I.lookup j $ nodeMap h
+            check p q
+
+    -- mark two nodes as equal and return info if they were not
+    -- already marked as such (i.e. if marking was effective)
+    markEqual i j = lift $ S.state $ \s ->
+        if Set.member (i, j) s
+            then (False, s)
+            else (True, Set.insert (i, j) s)
+        
+
+-- | Check whether the two graphs are equal given node
+-- identifiers which must correspond to each other.
+equal
+    :: (Eq f, Eq a)
+    => Graph f a    -- ^ The first feature graph
+    -> ID           -- ^ Node from the first graph
+    -> Graph f a    -- ^ The second feature graph
+    -> ID           -- ^ Node from the second graph
+    -> Bool
+equal g i h j = equals g h [(i, j)]
 
 
 --------------------------------------------------------------------
@@ -239,6 +309,11 @@ printTree Graph{..} =
 --------------------------------------------------------------------
 -- Misc
 --------------------------------------------------------------------
+
+
+-- | Lift a maybe value to a MaybeT transformer.
+maybeT :: Monad m => Maybe a -> MaybeT m a
+maybeT = MaybeT . return
 
 
 -- swap :: (a, b) -> (b, a)

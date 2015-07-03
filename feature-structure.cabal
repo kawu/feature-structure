@@ -1,5 +1,5 @@
 name:               feature-structure
-version:            0.1.0
+version:            0.2.0
 synopsis:           Feature structures
 description:
     TODO
@@ -43,8 +43,8 @@ library
       , NLP.FeatureStructure.Unify
       , NLP.FeatureStructure.Unify.Tests
       , NLP.FeatureStructure.Reid
-      , NLP.FeatureStructure.Parse
-      , NLP.FeatureStructure.Parse.Tests
+      -- , NLP.FeatureStructure.Parse
+      -- , NLP.FeatureStructure.Parse.Tests
 
     other-modules:
         NLP.FeatureStructure.DisjSet
