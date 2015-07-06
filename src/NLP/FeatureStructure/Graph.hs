@@ -36,6 +36,7 @@ module NLP.FeatureStructure.Graph
 , fromTwo
 , printGraph
 , printTree
+, showFlat
 ) where
 
 
@@ -54,6 +55,7 @@ import           Control.Monad.Trans.Class (lift)
 import qualified Data.Traversable as Tr
 import qualified Data.Map.Strict as M
 import qualified Data.Set as Set
+import           Data.List (intercalate)
 import qualified Data.IntMap.Strict as I
 import           Data.Maybe (isJust)
 
@@ -387,6 +389,23 @@ printTree Graph{..} =
     putFeat ind (x, j) = do
         putStr $ ind ++ "  " ++ show x ++ " -> "
         doit (ind ++ "    ") j 
+
+
+-- | Show the graph in one line.
+showFlat :: (Show f, Show a) => Graph f a -> ID -> String
+showFlat Graph{..} =
+    enclose "[" "]" . doit
+  where
+    enclose l r x = l ++ x ++ r
+    doit i = case I.lookup (D.repr i disjSet) nodeMap of
+        Nothing -> ""
+        Just nd ->
+            "" -- show i ++ "(" ++ show (D.repr i disjSet) ++ ")"
+         ++ ( case nd of
+                Interior m -> intercalate ", "
+                    $ map putFeat $ M.toList m
+                Frontier y -> show y )
+    putFeat (x, j) = show x ++ "=" ++ doit j
 
 
 --------------------------------------------------------------------
