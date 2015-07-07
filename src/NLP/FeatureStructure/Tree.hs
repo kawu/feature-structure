@@ -28,6 +28,8 @@ module NLP.FeatureStructure.Tree
 -- import           Control.Applicative ((<$>))
 import           Control.Monad (forM, forM_)
 import qualified Control.Monad.State.Strict as S
+import           Control.Monad.Identity (Identity, runIdentity)
+
 import qualified Data.Set as Set
 import qualified Data.Map.Strict as M
 import qualified Data.Traversable as T
@@ -114,6 +116,39 @@ name i fn = fn { ide = Just i }
 
 
 --------------------------------------------------------------------
+-- Conversion: Interface
+--------------------------------------------------------------------
+
+
+-- | Run the conversion monad.
+runConT
+    :: Monad m
+    => ConvT m b
+    -> m (Maybe (b, G.Graph f a))
+runConT convT = flip J.runJoinT G.empty $ do
+    -- First we run the conversion
+    (x, st) <- S.runStateT convT initConS
+    -- The second step is to join all nodes which have to be
+    -- merged based on the identifiers specified by the user.
+    forM_ (M.elems $ conI st) $ \ks -> do
+        forM_ (adja $ Set.toList ks) $ \(i, j) -> do
+            J.join i j
+    -- T.mapM (J.liftGraph . G.getRepr) t1
+    return x
+
+
+-- | Convert a given feature tree to a feature graph.
+--
+-- TODO: the reason we cannot export this function as it is is
+-- that the ID value returned can change in "future".
+convTree
+    :: (Monad m, Ord i, Eq a, Ord f)
+    => FN i f a
+    -> ConT i f a m ID
+convTree = fromFN
+
+
+--------------------------------------------------------------------
 -- Conversion
 --------------------------------------------------------------------
 
@@ -170,20 +205,28 @@ compiles t0 = flip J.runJoin G.empty $ do
     T.mapM (J.liftGraph . G.getRepr) t1
 
 
+-- | A conversion transformer. 
+type ConT i f a m b = S.StateT (ConS i f a) (J.JoinT f a m) b
+
+
 -- | A conversion monad. 
-type Con i f a b = S.StateT (ConS i f a) (J.Join f a) b
+-- type Con i f a b = S.StateT (ConS i f a) (J.Join f a) b
+type Con i f a b = ConT i f a Identity b
 
 
 -- | Convert the given traversable structure of named feature trees
 -- to a trivial feature graph.
 fromTravFN
-    :: (T.Traversable t, Ord i, Ord f, Eq a)
-    => t (FN i f a) -> Con i f a (t ID)
+    :: (Monad m, T.Traversable t, Ord i, Ord f, Eq a)
+    => t (FN i f a) -> ConT i f a m (t ID)
 fromTravFN = T.mapM fromFN
 
 
 -- | Convert the given named feature tree to a feature graph.
-fromFN :: (Ord i, Ord f, Eq a) => FN i f a -> Con i f a ID
+fromFN
+    :: (Monad m, Ord i, Ord f, Eq a)
+    => FN i f a
+    -> ConT i f a m ID
 fromFN FN{..} = do
     x <- fromFT val
     justM ide (register x)
@@ -191,7 +234,10 @@ fromFN FN{..} = do
  
 
 -- | Convert the given feature tree to a trivial feature graph.
-fromFT :: (Ord i, Ord f, Eq a) => FT i f a -> Con i f a ID
+fromFT
+    :: (Monad m, Ord i, Ord f, Eq a)
+    => FT i f a
+    -> ConT i f a m ID
 fromFT (Subs x) = fromAV x
 fromFT (Atom x) = do
     i <- newID
@@ -202,7 +248,9 @@ fromFT (Atom x) = do
 -- | Convert the given tree to a trivial feature graph.
 -- The result (`conI` and `conR`) will be represented
 -- within the state of the monad.
-fromAV :: (Ord i, Ord f, Eq a) => AV i f a -> Con i f a ID
+fromAV
+    :: (Monad m, Ord i, Ord f, Eq a)
+    => AV i f a -> ConT i f a m ID
 fromAV fs = do
     i  <- newID
     xs <- forM (M.toList fs) (secondM fromFN)
@@ -211,7 +259,9 @@ fromAV fs = do
 
 
 -- | Register the relation between the new and the old identifier.
-register :: (Ord i, Ord f, Eq a) => ID -> i -> Con i f a ()
+register
+    :: (Monad m, Ord i, Ord f, Eq a)
+    => ID -> i -> ConT i f a m ()
 register i j = S.modify $ \st@ConS{..} ->
     let conI' = M.alter (addKey i) j conI
     in  st { conI = conI' }
@@ -221,13 +271,13 @@ register i j = S.modify $ \st@ConS{..} ->
 
 
 -- | New identifier.
-newID :: Con i f a ID
+newID :: Monad m => ConT i f a m ID
 newID = S.state $ \st@ConS{..} ->
     (conC, st {conC=conC+1})
 
 
 -- | Add node.
-addNode :: ID -> G.Node f a -> Con i f a ()
+addNode :: Monad m => ID -> G.Node f a -> ConT i f a m ()
 addNode i = S.lift . J.liftGraph . G.setNode i
 -- addNode x y = S.modify $ \st@ConS{..} ->
 --     st {conR = (x, y) : conR}
