@@ -159,13 +159,6 @@ equals g h
             p <- maybeT $ I.lookup i $ nodeMap g
             q <- maybeT $ I.lookup j $ nodeMap h
             check p q
-
---     -- mark two nodes as equal and return info if they were not
---     -- already marked as such (i.e. if marking was effective)
---     markEqual i j = lift $ S.state $ \s ->
---         if Set.member (i, j) s
---             then (False, s)
---             else (True, Set.insert (i, j) s)
         
 
 -- | Check whether the two graphs are equal given node

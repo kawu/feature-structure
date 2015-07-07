@@ -21,7 +21,6 @@ module NLP.FeatureStructure.Tree
 -- * Compile
 , compile
 , compiles
-
 ) where
 
 
@@ -113,39 +112,6 @@ label = flip name empty
 -- | Assign a name to an `FN`.
 name :: i -> FN i f a -> FN i f a
 name i fn = fn { ide = Just i }
-
-
---------------------------------------------------------------------
--- Conversion: Interface
---------------------------------------------------------------------
-
-
--- | Run the conversion monad.
-runConT
-    :: Monad m
-    => ConvT m b
-    -> m (Maybe (b, G.Graph f a))
-runConT convT = flip J.runJoinT G.empty $ do
-    -- First we run the conversion
-    (x, st) <- S.runStateT convT initConS
-    -- The second step is to join all nodes which have to be
-    -- merged based on the identifiers specified by the user.
-    forM_ (M.elems $ conI st) $ \ks -> do
-        forM_ (adja $ Set.toList ks) $ \(i, j) -> do
-            J.join i j
-    -- T.mapM (J.liftGraph . G.getRepr) t1
-    return x
-
-
--- | Convert a given feature tree to a feature graph.
---
--- TODO: the reason we cannot export this function as it is is
--- that the ID value returned can change in "future".
-convTree
-    :: (Monad m, Ord i, Eq a, Ord f)
-    => FN i f a
-    -> ConT i f a m ID
-convTree = fromFN
 
 
 --------------------------------------------------------------------
@@ -279,8 +245,6 @@ newID = S.state $ \st@ConS{..} ->
 -- | Add node.
 addNode :: Monad m => ID -> G.Node f a -> ConT i f a m ()
 addNode i = S.lift . J.liftGraph . G.setNode i
--- addNode x y = S.modify $ \st@ConS{..} ->
---     st {conR = (x, y) : conR}
 
 
 --------------------------------------------------------------------

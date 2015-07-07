@@ -145,7 +145,7 @@ data Fail
 
 
 -- | Pop next pair of nodes from the queue.  If the nodes are
--- not distinct, return `Nothing`.
+-- not distinct, return `Equal`.
 popNext :: (Functor m, Monad m) => JoinT f a m (Either Fail (ID, ID))
 popNext = E.runEitherT $ do
     (i0, j0) <- E.tryJust Empty =<< lift pop
@@ -172,7 +172,7 @@ whileNotEmpty cond m = do
 --------------------------------------------------------------------
 
 
--- | Merge all node-pairs remaining in the `jsQu` queue.
+-- | Merge all node-pairs remaining in the queue.
 mergeRest :: (Functor m, Monad m, Ord f, Eq a) => JoinT f a m ()
 mergeRest = whileNotEmpty popNext $ \(i, j) -> merge i j
 
