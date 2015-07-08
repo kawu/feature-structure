@@ -42,7 +42,7 @@ module NLP.FeatureStructure.Graph2 where
 
 import           Prelude hiding (log)
 
--- import           Control.Applicative ((<$>), (<*>))
+import           Control.Applicative ((<$>))
 import qualified Control.Applicative as App
 import           Control.Monad (forM_, when, guard)
 -- import           Control.Monad.Identity (Identity)
@@ -57,7 +57,7 @@ import qualified Data.Map.Strict as M
 import qualified Data.Set as Set
 import           Data.List (intercalate)
 -- import qualified Data.IntMap.Strict as I
-import           Data.Maybe (isJust)
+import           Data.Maybe (isJust, catMaybes)
 
 
 --------------------------------------------------------------------
@@ -276,6 +276,49 @@ data Res i j f a = Res {
     -- reidentifying graphs by assuming that the sets of IDs are
     -- disjoint, but this would be cumbersome and pretty unsafe.
     , convID    :: i -> j }
+
+
+--------------------------------------------------------------------
+-- Graph trimming
+--------------------------------------------------------------------
+
+
+-- | Certain graph-modifying operations, e.g. unification, do not
+-- touch the set(s) of nodes of the underlying graph(s).  Some nodes
+-- are merged with others, true, but in the end we can use each of
+-- the identifiers of the input graph in order to find its
+-- corresponding node in the output graph (see `Res` data type).
+--
+-- Sometimes it may be useful, though, to drop parts of information
+-- of the underlying structure, e.g. nodes no longer reachable from
+-- the given set of nodes wchich are of interest at the moment.
+-- This function allows to remove such nodes given the set of IDs
+-- of nodes of interest.
+trim
+    :: Ord i
+    => Graph i f a  -- ^ The underlying graph 
+    -> [i]          -- ^ The set of interesting nodes: in the
+                    --  resultant graph only nodes reachable from
+                    --  this set will be preserved.
+    -> Graph i f a
+trim g roots = Graph $ M.fromList $ catMaybes
+    [ (i,) <$> getNode i g
+    | i <- Set.toList reachable ]
+  where
+    reachable
+        = flip S.execState Set.empty
+        $ mapM_ visitID roots
+    visitID i = do
+        b <- isVisited i
+        when (not b) $ do
+            markVisited i
+            case getNode i g of
+                Just n  -> visitNode n
+                Nothing -> return ()
+    visitNode (Interior m) = mapM_ visitID $ M.elems m
+    visitNode (Frontier _) = return ()
+    isVisited i = S.gets $ Set.member i
+    markVisited i = S.modify $ Set.insert i
 
 
 --------------------------------------------------------------------

@@ -243,7 +243,9 @@ merge i j = do
 
 -- | Join the two given nodes (and more, when necesseary)
 -- in the feature graph.
-join :: (Functor m, Monad m, Ord i, Ord f, Eq a) => i -> i -> JoinT i f a m ()
+join
+    :: (Functor m, Monad m, Ord i, Ord f, Eq a)
+    => i -> i -> JoinT i f a m ()
 join i j = merge i j >> mergeRest
 
 
