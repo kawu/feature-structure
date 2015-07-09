@@ -252,7 +252,14 @@ mapIDsMono f (Graph m) = Graph $ M.fromAscList
     | (k, v) <- M.toAscList m ]
 
 
--- | Map identifiers of the node using a strictly monotonic function.
+-- | Map keys of the feature graph.
+mapIDs :: Ord j => (i -> j) -> Graph i f a -> Graph j f a
+mapIDs f (Graph m) = Graph $ M.fromList
+    [ (f k, mapNodeIDs f v)
+    | (k, v) <- M.toList m ]
+
+
+-- | Map identifiers of the node.
 mapNodeIDs :: (i -> j) -> Node i f a -> Node j f a
 mapNodeIDs f (Interior m) = Interior $ M.map f m
 mapNodeIDs _ (Frontier x) = Frontier x
@@ -343,6 +350,27 @@ showFlat g =
                     $ map putFeat $ M.toList m
                 Frontier y -> show y )
     putFeat (x, j) = show x ++ "=" ++ doit j
+
+
+-- | Print information about the graph into stdout.  Alternative version.
+printTree
+    :: (Ord i, Show i, Show f, Show a)
+    => Graph i f a -> i -> IO ()
+printTree Graph{..} =
+    doit ""
+  where
+    doit ind i = case M.lookup i nodeMap of
+        Nothing -> error "Graph.printTree: unknown ID"
+        Just nd -> do
+            putStrLn $ show i
+            case nd of
+                Interior m  -> do
+                    forM_ (M.toList m) $ putFeat ind
+                Frontier y  -> do
+                    putStrLn $ ind ++ " " ++ show y
+    putFeat ind (x, j) = do
+        putStr $ ind ++ "  " ++ show x ++ " -> "
+        doit (ind ++ "    ") j
 
 
 --------------------------------------------------------------------

@@ -68,10 +68,11 @@ runJoinT
 runJoinT m g = do
     (mx, joinS) <- S.runStateT
         (runMaybeT m) (emptyJoinS g)
+    let conv = flip D.repr $ disjS joinS
     return $ case mx of
         Just x -> Just (x, Res
-            { resGraph = graph joinS
-            , convID = flip D.repr $ disjS joinS })
+            { resGraph = mapIDs conv $ graph joinS
+            , convID = conv })
         Nothing -> Nothing
 
 
