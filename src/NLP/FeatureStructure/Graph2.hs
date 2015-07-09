@@ -326,21 +326,23 @@ trim g roots = Graph $ M.fromList $ catMaybes
 --------------------------------------------------------------------
 
 
--- -- | Show the graph in one line.
--- showFlat :: (Show f, Show a) => Graph f a -> ID -> String
--- showFlat g =
---     enclose "[" "]" . doit
---   where
---     enclose l r x = l ++ x ++ r
---     doit i = case getNode i g of
---         Nothing -> ""
---         Just nd ->
---             "" -- show i ++ "(" ++ show (D.repr i disjSet) ++ ")"
---          ++ ( case nd of
---                 Interior m -> intercalate ", "
---                     $ map putFeat $ M.toList m
---                 Frontier y -> show y )
---     putFeat (x, j) = show x ++ "=" ++ doit j
+-- | Show the graph in one line.
+showFlat
+    :: (Ord i, Show i, Show f, Show a)
+    => Graph i f a -> i -> String
+showFlat g =
+    enclose "[" "]" . doit
+  where
+    enclose l r x = l ++ x ++ r
+    doit i = case getNode i g of
+        Nothing -> ""
+        Just nd ->
+            "" -- show i ++ "(" ++ show (D.repr i disjSet) ++ ")"
+         ++ ( case nd of
+                Interior m -> intercalate ", "
+                    $ map putFeat $ M.toList m
+                Frontier y -> show y )
+    putFeat (x, j) = show x ++ "=" ++ doit j
 
 
 --------------------------------------------------------------------
