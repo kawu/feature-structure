@@ -39,11 +39,13 @@ library
       , NLP.FeatureStructure.Tree
       -- , NLP.FeatureStructure.Tree.Tests
       , NLP.FeatureStructure.AVM
-      , NLP.FeatureStructure.Graph
-      , NLP.FeatureStructure.Join
+      -- , NLP.FeatureStructure.Graph
+      , NLP.FeatureStructure.Graph2
+      -- , NLP.FeatureStructure.Join
+      , NLP.FeatureStructure.Join2
       , NLP.FeatureStructure.Unify
-      , NLP.FeatureStructure.Unify.Tests
-      , NLP.FeatureStructure.Reid
+      -- , NLP.FeatureStructure.Unify.Tests
+      , NLP.FeatureStructure.Reid2
       -- , NLP.FeatureStructure.Parse
       -- , NLP.FeatureStructure.Parse.Tests
 

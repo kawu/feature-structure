@@ -63,9 +63,9 @@ import           Data.Maybe (isJust, catMaybes)
 --------------------------------------------------------------------
 -- Feature graph data structure
 --------------------------------------------------------------------
-
-
--- | Identifier.
+  
+  
+-- | A node identifier.
 type ID = Int
 
 
