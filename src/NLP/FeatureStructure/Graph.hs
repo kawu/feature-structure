@@ -14,27 +14,22 @@ module NLP.FeatureStructure.Graph
   Graph (..)
 , Node (..)
 , empty
-, mkGraph
-, clean
-
--- * Monad
-, GraphT
-, GraphM
-, runGraphT
-, runGraphM
-, getRepr
-, mkReprOf
 , getNode
-, setNode
-, remNode
+, getIDs
 
--- * Utility
+-- * Equality 
 , equal
 , equals
+
+-- * Comparison
 , compare'
 , compares
+
+-- * Utility
+, mapIDs
 , fromTwo
-, printGraph
+, trim
+-- , printGraph
 , printTree
 , showFlat
 ) where
@@ -42,90 +37,67 @@ module NLP.FeatureStructure.Graph
 
 import           Prelude hiding (log)
 
-import           Control.Applicative ((<$>), (<*>))
+import           Control.Applicative ((<$>))
 import qualified Control.Applicative as App
 import           Control.Monad (forM_, when, guard)
-import           Control.Monad.Identity (Identity)
+-- import           Control.Monad.Identity (Identity)
 import qualified Control.Monad.State.Strict as S
 import           Control.Monad.Trans.Maybe (MaybeT(..))
 -- import           Control.Monad.Trans.Either (EitherT(..))
 import qualified Control.Monad.Trans.Either as E
 import           Control.Monad.Trans.Class (lift)
 
-import qualified Data.Traversable as Tr
+-- import qualified Data.Traversable as Tr
 import qualified Data.Map.Strict as M
 import qualified Data.Set as Set
 import           Data.List (intercalate)
-import qualified Data.IntMap.Strict as I
-import           Data.Maybe (isJust)
-
-import           NLP.FeatureStructure.Core
-import qualified NLP.FeatureStructure.DisjSet as D
+-- import qualified Data.IntMap.Strict as I
+import           Data.Maybe (isJust, catMaybes)
 
 
 --------------------------------------------------------------------
 -- Feature graph data structure
 --------------------------------------------------------------------
-
-
--- TODO: We should try to hide some of the implemntation details
--- and not to export definitions of FG and Node (or perhaps to
--- export, but only in an `Internal` submodule).
--- All higher level operations should work on node identifiers
--- alone (i.e. they should not have access to node themselves).
-
-
+  
+  
 -- | A feature graph with edges labeled by features of type `f`
 -- and frontier nodes labeled with atomic values of type `a`.
-data Graph f a = Graph {
-    -- | A map from IDs to nodes.
-      nodeMap   :: I.IntMap (Node f a)
-    -- | A disjoint-set data structure, which keeps track of
-    -- the node merging (in a way). 
-    , disjSet   :: D.DisjSet ID
-    } deriving (Show)
+newtype Graph i f a = Graph {
+      nodeMap   :: M.Map i (Node i f a)
+    } deriving (Show, Eq, Ord)
 
 
 -- | A node in a feature graph.
-data Node f a
-    = Interior (M.Map f ID)
+data Node i f a
+    = Interior (M.Map f i)
     | Frontier a
     deriving (Show, Eq, Ord)
 
 
 -- | An empty graph.
-empty :: Graph f a
-empty = Graph I.empty D.empty
+empty :: Graph i f a
+empty = Graph M.empty
 
 
--- | Construct graph form an arbitrary list of nodes.
-mkGraph :: [(ID, Node f a)] -> Graph f a
-mkGraph xs = Graph (I.fromList xs) D.empty
+-- | Retrieve node under the given identifier.
+getNode :: Ord i => i -> Graph i f a -> Maybe (Node i f a)
+getNode i = M.lookup i . nodeMap
 
 
--- | Clean the graph: replace every identifier with its representant.
--- As a result, the resultant graph will have an empty `disjSet`.
-clean :: Graph f a -> Graph f a
-clean g = fst . flip runGraphM g $ do
-    nodeMap' <- mapM cleanPair $ I.toList $ nodeMap g
-    return $ Graph (I.fromList nodeMap') D.empty
-  where
-    cleanPair (i, x) = (,) <$> getRepr i <*> cleanNode x
-    cleanNode (Interior m) = Interior <$> Tr.mapM getRepr m
-    cleanNode (Frontier x) = return $ Frontier x
-    -- cleanSnd (x, i) = (x,) <$> getRepr i
-
+-- | Get the set of node identifiers in the graph.
+getIDs :: Ord i => Graph i f a -> Set.Set i
+getIDs = M.keysSet . nodeMap
 
 
 -- | Check whether the two graphs are equal given node
 -- identifiers which must correspond to each other.
 equals
-    :: (Eq f, Eq a)
-    => Graph f a    -- ^ The first feature graph
-    -> Graph f a    -- ^ The second feature graph
-    -> [(ID, ID)]   -- ^ Nodes from the first and the second graph
-                    --   respectively which should correspond to
-                    --   each other.
+    :: (Ord i, Ord j, Eq f, Eq a)
+    => Graph i f a      -- ^ The first feature graph
+    -> Graph j f a      -- ^ The second feature graph
+    -> [(i, j)]   -- ^ Nodes from the first and the second graph
+                        --   respectively which should correspond to
+                        --   each other.
     -> Bool
 equals g h
 
@@ -147,28 +119,24 @@ equals g h
     check _ _ = App.empty
 
     -- check that the two identifiers represent identical nodes
-    checkIDs i0 j0 = do
-        -- find representants
-        let i = D.repr i0 $ disjSet g
-            j = D.repr j0 $ disjSet h
+    checkIDs i j = do
         -- mark two states as equal; the function returns true
         -- if nodes were not marked as equal earlier
         b <- lift $ markEqual i j
         when b $ do
             -- this should not actually fail 
-            p <- maybeT $ I.lookup i $ nodeMap g
-            q <- maybeT $ I.lookup j $ nodeMap h
+            p <- maybeT $ getNode i g
+            q <- maybeT $ getNode j h
             check p q
-        
 
 -- | Check whether the two graphs are equal given node
 -- identifiers which must correspond to each other.
 equal
-    :: (Eq f, Eq a)
-    => Graph f a    -- ^ The first feature graph
-    -> ID           -- ^ Node from the first graph
-    -> Graph f a    -- ^ The second feature graph
-    -> ID           -- ^ Node from the second graph
+    :: (Ord i, Ord j, Eq f, Eq a)
+    => Graph i f a  -- ^ The first feature graph
+    -> i         -- ^ Node from the first graph
+    -> Graph j f a  -- ^ The second feature graph
+    -> j         -- ^ Node from the second graph
     -> Bool
 equal g i h j = equals g h [(i, j)]
 
@@ -176,10 +144,10 @@ equal g i h j = equals g h [(i, j)]
 -- | Compare two graphs given nodes which should
 -- correspond to each other.
 compares
-    :: (Ord f, Ord a)
-    => Graph f a    -- ^ The first feature graph
-    -> Graph f a    -- ^ The second feature graph
-    -> [(ID, ID)]   -- ^ Nodes from the first and the second graph
+    :: (Ord i, Ord j, Ord f, Ord a)
+    => Graph i f a  -- ^ The first feature graph
+    -> Graph j f a  -- ^ The second feature graph
+    -> [(i, j)] -- ^ Nodes from the first and the second graph
                     --   respectively which should correspond to
                     --   each other.
     -> Ordering
@@ -217,28 +185,25 @@ compares g h
     -- compare two nodes represented by their identifiers;
     -- note that implementation of this function is very similar
     -- to the one within `equals`.
-    checkIDs i0 j0 = do
-        -- find representants
-        let i = D.repr i0 $ disjSet g
-            j = D.repr j0 $ disjSet h
+    checkIDs i j = do
         -- mark two states as equal; the function returns true
         -- if nodes were not marked as equal earlier
         b <- lift $ markEqual i j
         when b $ do
             -- TODO: well, these should actualy fail with error!
-            p <- maybeE LT $ I.lookup i $ nodeMap g
-            q <- maybeE GT $ I.lookup j $ nodeMap h
+            p <- maybeE LT $ getNode i g
+            q <- maybeE GT $ getNode j h
             check p q
 
 
 -- | Compare two graphs given node identifiers which must
 -- correspond to each other.
 compare'
-    :: (Ord f, Ord a)
-    => Graph f a    -- ^ The first feature graph
-    -> ID           -- ^ Node from the first graph
-    -> Graph f a    -- ^ The second feature graph
-    -> ID           -- ^ Node from the second graph
+    :: (Ord i, Ord j, Ord f, Ord a)
+    => Graph i f a  -- ^ The first feature graph
+    -> i         -- ^ Node from the first graph
+    -> Graph j f a  -- ^ The second feature graph
+    -> j         -- ^ Node from the second graph
     -> Ordering
 compare' g i h j = compares g h [(i, j)]
 
@@ -246,7 +211,7 @@ compare' g i h j = compares g h [(i, j)]
 -- | Mark two nodes as equal and return info if they were not
 -- already marked as such (i.e. if marking was effective).
 -- A utility function for both `compares` and `equals`.
-markEqual :: ID -> ID -> S.State (Set.Set (ID, ID)) Bool
+markEqual :: (Ord i, Ord j) => i -> j -> S.State (Set.Set (i, j)) Bool
 markEqual i j = S.state $ \s ->
     if Set.member (i, j) s
         then (False, s)
@@ -254,94 +219,85 @@ markEqual i j = S.state $ \s ->
 
 
 --------------------------------------------------------------------
--- Graph monad
---------------------------------------------------------------------
-
-
--- | A feature graph monad transformer. 
-type GraphT f a = S.StateT (Graph f a)
-
-
--- | A feature graph monad (a transformer over Identify monad).
-type GraphM f a = S.StateT (Graph f a) Identity
-
-
--- | Run the graph monad trasformer.
-runGraphT :: GraphT f a m b -> Graph f a -> m (b, Graph f a)
-runGraphT = S.runStateT
-
-
--- | Run the graph monad.
-runGraphM :: GraphM f a b -> Graph f a -> (b, Graph f a)
-runGraphM = S.runState
-
-
---------------------------------------------------------------------
--- Graph monad: interface
---------------------------------------------------------------------
-
-
--- | Identify the current representant of the node.
-getRepr :: (Functor m, Monad m) => ID -> GraphT f a m ID
-getRepr k = D.repr k <$> S.gets disjSet
-
-
--- | Set the representant of the node.
-mkReprOf :: (Monad m) => ID -> ID -> GraphT f a m ()
-mkReprOf x y = S.modify $ \g@Graph{..} ->
-        g {disjSet = D.mkReprOf x y disjSet}
-
-
--- | Retrieve node hidden behind the given identifier.
-getNode :: (Functor m, Monad m) => ID -> GraphT f a m (Maybe (Node f a))
-getNode i = I.lookup <$> getRepr i <*> S.gets nodeMap
-
-
--- | Set node under the given identifier.
-setNode :: Monad m => ID -> Node f a -> GraphT f a m ()
-setNode i x = S.modify $ \g@Graph{..} ->
-    g {nodeMap = I.insert i x nodeMap}
-
-
--- | Remove node under the given identifier.
-remNode :: Monad m => ID -> GraphT f a m ()
-remNode i = S.modify $ \g@Graph{..} ->
-    g {nodeMap = I.delete i nodeMap}
-
-
---------------------------------------------------------------------
 -- Join two feature graphs
 --------------------------------------------------------------------
 
 
--- | Join two feature graphs.  We assume, that identifiers
--- in the graphs are disjoint.
-fromTwo :: Graph f a -> Graph f a -> Graph f a
-fromTwo f g = Graph
-    { nodeMap   = I.union (nodeMap f) (nodeMap g)
-    , disjSet   = D.union (disjSet f) (disjSet g) }
+-- | Join two feature graphs.  Nodes from the first graph will be
+-- marked as `Left`s, nodes from the second one -- as `Right`s. 
+fromTwo
+    :: (Ord i, Ord j)
+    => Graph i f a
+    -> Graph j f a
+    -> Graph (Either i j) f a
+fromTwo f g = Graph $ M.fromAscList $
+    (nodeList $ mapIDsMono Left f) ++
+    (nodeList $ mapIDsMono Right g)
+    where nodeList = M.toAscList . nodeMap
 
 
--- -- | Join two feature graphs.  Nodes from the first graph will be
--- -- marked as `Left`s, nodes from the second one -- as `Right`s. 
--- fromTwo :: Ord i => FG i f a -> FG i f a -> FG (Either i i) f a
--- fromTwo f g = M.fromAscList $
---     (M.toAscList $ mapIDsMono Left f) ++
---     (M.toAscList $ mapIDsMono Right g)
--- 
--- 
--- -- | Map keys of the feature graph using a strictly monotonic function.
--- mapIDsMono :: Ord j => (i -> j) -> FG i f a -> FG j f a
--- mapIDsMono f m = M.fromAscList
---     [ (f k, mapNodeIDs f v)
---     | (k, v) <- M.toAscList m ]
--- 
--- 
--- -- | Map identifiers of the node using a strictly monotonic function.
--- mapNodeIDs :: (i -> j) -> Node i f a -> Node j f a
--- mapNodeIDs f (Interior m) = Interior $ M.map f m
--- mapNodeIDs _ (Frontier x) = Frontier x
--- {-# INLINE mapNodeIDs #-}
+-- | Map keys of the feature graph using a strictly monotonic function.
+mapIDsMono :: Ord j => (i -> j) -> Graph i f a -> Graph j f a
+mapIDsMono f (Graph m) = Graph $ M.fromAscList
+    [ (f k, mapNodeIDs f v)
+    | (k, v) <- M.toAscList m ]
+
+
+-- | Map keys of the feature graph.
+mapIDs :: Ord j => (i -> j) -> Graph i f a -> Graph j f a
+mapIDs f (Graph m) = Graph $ M.fromList
+    [ (f k, mapNodeIDs f v)
+    | (k, v) <- M.toList m ]
+
+
+-- | Map identifiers of the node.
+mapNodeIDs :: (i -> j) -> Node i f a -> Node j f a
+mapNodeIDs f (Interior m) = Interior $ M.map f m
+mapNodeIDs _ (Frontier x) = Frontier x
+{-# INLINE mapNodeIDs #-}
+
+
+--------------------------------------------------------------------
+-- Graph trimming
+--------------------------------------------------------------------
+
+
+-- | Certain graph-modifying operations, e.g. unification, do not
+-- touch the set(s) of nodes of the underlying graph(s).  Some nodes
+-- are merged with others, true, but in the end we can use each of
+-- the identifiers of the input graph in order to find its
+-- corresponding node in the output graph (see `Res` data type).
+--
+-- Sometimes it may be useful, though, to drop parts of information
+-- of the underlying structure, e.g. nodes no longer reachable from
+-- the given set of nodes wchich are of interest at the moment.
+-- This function allows to remove such nodes given the set of IDs
+-- of nodes of interest.
+trim
+    :: Ord i
+    => Graph i f a  -- ^ The underlying graph 
+    -> [i]          -- ^ The set of interesting nodes: in the
+                    --  resultant graph only nodes reachable from
+                    --  this set will be preserved.
+    -> Graph i f a
+trim g roots = Graph $ M.fromList $ catMaybes
+    [ (i,) <$> getNode i g
+    | i <- Set.toList reachable ]
+  where
+    reachable
+        = flip S.execState Set.empty
+        $ mapM_ visitID roots
+    visitID i = do
+        b <- isVisited i
+        when (not b) $ do
+            markVisited i
+            case getNode i g of
+                Just n  -> visitNode n
+                Nothing -> return ()
+    visitNode (Interior m) = mapM_ visitID $ M.elems m
+    visitNode (Frontier _) = return ()
+    isVisited i = S.gets $ Set.member i
+    markVisited i = S.modify $ Set.insert i
 
 
 --------------------------------------------------------------------
@@ -349,48 +305,15 @@ fromTwo f g = Graph
 --------------------------------------------------------------------
 
 
--- | Print information about the graph into stdout.
-printGraph :: (Show f, Show a) => Graph f a -> IO ()
-printGraph Graph{..} = do
-    putStrLn "# node map"
-    forM_ (I.toList nodeMap) $ \(i, nd) -> case nd of
-        Frontier x  -> do
-            putStrLn $ "# frontier " ++ show i ++ " => " ++ show x
-        Interior m  -> do
-            putStrLn $ "# interior " ++ show i
-            forM_ (M.toList m) print
-    putStrLn "# disjoint-set"
-    D.printDisjSet disjSet
-
-
--- | Print information about the graph into stdout.  Alternative version.
-printTree :: (Show f, Show a) => Graph f a -> ID -> IO ()
-printTree Graph{..} =
-    -- flip S.runStateT S.empty . doit ""
-    doit ""
-  where
-    doit ind i = case I.lookup (D.repr i disjSet) nodeMap of
-        Nothing -> return ()
-        Just nd -> do
-            putStrLn $ show i ++ " ("
-                ++ show (D.repr i disjSet) ++ ")"
-            case nd of
-                Interior m  -> do
-                    forM_ (M.toList m) $ putFeat ind
-                Frontier y  -> do
-                    putStrLn $ ind ++ " " ++ show y
-    putFeat ind (x, j) = do
-        putStr $ ind ++ "  " ++ show x ++ " -> "
-        doit (ind ++ "    ") j 
-
-
 -- | Show the graph in one line.
-showFlat :: (Show f, Show a) => Graph f a -> ID -> String
-showFlat Graph{..} =
+showFlat
+    :: (Ord i, Show i, Show f, Show a)
+    => Graph i f a -> i -> String
+showFlat g =
     enclose "[" "]" . doit
   where
     enclose l r x = l ++ x ++ r
-    doit i = case I.lookup (D.repr i disjSet) nodeMap of
+    doit i = case getNode i g of
         Nothing -> ""
         Just nd ->
             "" -- show i ++ "(" ++ show (D.repr i disjSet) ++ ")"
@@ -399,6 +322,27 @@ showFlat Graph{..} =
                     $ map putFeat $ M.toList m
                 Frontier y -> show y )
     putFeat (x, j) = show x ++ "=" ++ doit j
+
+
+-- | Print information about the graph into stdout.  Alternative version.
+printTree
+    :: (Ord i, Show i, Show f, Show a)
+    => Graph i f a -> i -> IO ()
+printTree Graph{..} =
+    doit ""
+  where
+    doit ind i = case M.lookup i nodeMap of
+        Nothing -> error "Graph.printTree: unknown ID"
+        Just nd -> do
+            putStrLn $ show i
+            case nd of
+                Interior m  -> do
+                    forM_ (M.toList m) $ putFeat ind
+                Frontier y  -> do
+                    putStrLn $ ind ++ " " ++ show y
+    putFeat ind (x, j) = do
+        putStr $ ind ++ "  " ++ show x ++ " -> "
+        doit (ind ++ "    ") j
 
 
 --------------------------------------------------------------------
@@ -415,9 +359,3 @@ maybeT = MaybeT . return
 maybeE :: Monad m => e -> Maybe a -> E.EitherT e m a
 maybeE _ (Just x) = E.right x
 maybeE e Nothing  = E.left e
-
-
-
--- swap :: (a, b) -> (b, a)
--- swap (x, y) = (y, x)
--- {-# INLINE swap #-}

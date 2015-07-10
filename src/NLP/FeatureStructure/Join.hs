@@ -7,8 +7,11 @@
 
 module NLP.FeatureStructure.Join
 (
+-- * Result
+  Res (..)
+
 -- * JoinT
-  JoinT
+, JoinT
 , Join
 , runJoinT
 , runJoin
@@ -16,19 +19,23 @@ module NLP.FeatureStructure.Join
 , execJoin
 , evalJoinT
 , evalJoin
-, liftGraph
+
+-- * Graph operations
+, getRepr
+, mkReprOf
+, getNode
+, setNode
+, remNode
 
 -- * Joining nodes
 , join
 , joinMany
--- , repr
 ) where
 
 
 import           Prelude hiding (log)
 
 import           Control.Applicative ((<$>), (<*>))
-import           Control.Monad (void)
 import           Control.Monad.Trans.Maybe
 import           Control.Monad.Trans.Class (lift)
 import qualified Control.Monad.State.Strict as S
@@ -40,9 +47,27 @@ import qualified Data.Sequence as Seq
 import           Data.Sequence (Seq, (|>), ViewL(..))
 
 
--- import qualified NLP.FeatureStructure.DisjSet as D
-import           NLP.FeatureStructure.Core
-import           NLP.FeatureStructure.Graph
+import           NLP.FeatureStructure.Graph hiding (getNode)
+import qualified NLP.FeatureStructure.DisjSet as D
+
+
+--------------------------------------------------------------------
+-- Result of graph manipulation
+--------------------------------------------------------------------
+
+
+-- | The result of the graph-modifying computation.
+data Res i j f a = Res {
+    -- | The resulting graph,
+      resGraph  :: Graph j f a
+    -- | A function which returns a representant for each ID of
+    -- the input graph.  One needs two convert any external
+    -- identifier which has been earlier used to refer to a node
+    -- from the input graph since such identifier will no longer
+    -- be valid.  One could in fact bypass the need of
+    -- reidentifying graphs by assuming that the sets of IDs are
+    -- disjoint, but this would be cumbersome and pretty unsafe.
+    , convID    :: i -> j }
 
 
 --------------------------------------------------------------------
@@ -50,64 +75,75 @@ import           NLP.FeatureStructure.Graph
 --------------------------------------------------------------------
 
 
--- | The join monad transformer.
-type JoinT f a m =
-    MaybeT
-    (S.StateT (Seq (ID, ID))
-    (GraphT f a m))
+-- | State of the unification monad.
+data JoinS i f a = JoinS {
+    -- | The underlying graph.
+      graph :: Graph i f a
+    -- | The queue of identifiers to be joined.
+    , joinQ :: Seq (i, i)
+    -- | The disjoint set keeps track of merged nodes.
+    , disjS :: D.DisjSet i
+    } deriving (Show)
 
 
--- | The join monad over the identity monad.
-type Join f a = JoinT f a Identity
+-- | Empty JoinS state.
+emptyJoinS :: Graph i f a -> JoinS i f a
+emptyJoinS g = JoinS g Seq.empty D.empty
+
+
+-- | Join monad transformer.
+type JoinT i f a m =
+    MaybeT (S.StateT (JoinS i f a) m)
+
+
+-- | Join monad.
+type Join i f a = JoinT i f a Identity
 
 
 -- | Execute the `JoinT` computation.
 runJoinT
-    :: Monad m
-    => JoinT f a m b
-    -> Graph f a
-    -> m (Maybe (b, Graph f a))
+    :: (Monad m, Ord i)
+    => JoinT i f a m b
+    -> Graph i f a
+    -> m (Maybe (b, Res i i f a))
 runJoinT m g = do
-    (mx, g') <- flip runGraphT g 
-        $ flip S.evalStateT Seq.empty
-        $ runMaybeT m
+    (mx, joinS) <- S.runStateT
+        (runMaybeT m) (emptyJoinS g)
+    let conv = flip D.repr $ disjS joinS
     return $ case mx of
-        Just x  -> Just (x, g')
+        Just x -> Just (x, Res
+            { resGraph = mapIDs conv $ graph joinS
+            , convID = conv })
         Nothing -> Nothing
 
 
 -- | Run the `Join` monad on the given graph in a pure setting.
-runJoin :: Join f a b -> Graph f a -> Maybe (b, Graph f a)
+runJoin :: Ord i => Join i f a b -> Graph i f a -> Maybe (b, Res i i f a)
 runJoin m = runIdentity . runJoinT m
 
 
 -- | Execute the `JoinT` computation.
-execJoinT :: Monad m => JoinT f a m b -> Graph f a -> m (Maybe (Graph f a))
+execJoinT :: (Monad m, Ord i) => JoinT i f a m b -> Graph i f a -> m (Maybe (Res i i f a))
 execJoinT m g = do
     x <- runJoinT m g
     return $ snd <$> x
 
 
 -- | Execute the `JoinT` computation.
-execJoin :: Join f a b -> Graph f a -> Maybe (Graph f a)
+execJoin :: Ord i => Join i f a b -> Graph i f a -> Maybe (Res i i f a)
 execJoin m = runIdentity . execJoinT m
 
 
 -- | Evaluate the `JoinT` computation.
-evalJoinT :: Monad m => JoinT f a m b -> Graph f a -> m (Maybe b)
+evalJoinT :: (Monad m, Ord i) => JoinT i f a m b -> Graph i f a -> m (Maybe b)
 evalJoinT m g = do
     x <- runJoinT m g
     return $ fst <$> x
 
 
 -- | Evaluate the `JoinT` computation.
-evalJoin :: Join f a b -> Graph f a -> Maybe b
+evalJoin :: Ord i => Join i f a b -> Graph i f a -> Maybe b
 evalJoin m = runIdentity . evalJoinT m
-
-
--- | Lift the computation to the Graph monad.
-liftGraph :: Monad m => GraphT f a m b -> JoinT f a m b
-liftGraph = lift . lift
 
 
 --------------------------------------------------------------------
@@ -117,20 +153,57 @@ liftGraph = lift . lift
 
 -- | Pop the node pair from the queue.  TODO: By the way, does
 -- it have to be a queue for the algorithm to be correct?
-pop :: Monad m => JoinT f a m (Maybe (ID, ID))
-pop = S.state $ \q -> case Seq.viewl q of
-    EmptyL  -> (Nothing, q)
-    x :< q' -> (Just x, q')
+pop :: Monad m => JoinT i f a m (Maybe (i, i))
+pop = S.state $ \s@JoinS{..} -> case Seq.viewl joinQ of
+    EmptyL -> (Nothing, s)
+    x :< q -> (Just x,  s{joinQ=q})
 
 
 -- | Push the node pair into the queue.
-push :: Monad m => (ID, ID) -> JoinT f a m ()
-push x = S.modify (|>x)
+push :: Monad m => (i, i) -> JoinT i f a m ()
+push x = S.modify $ \s -> s
+    { joinQ = joinQ s |> x }
 
 
 -- | Unification failure.
-uniFail :: Monad m => JoinT f a m b
+uniFail :: Monad m => JoinT i f a m b
 uniFail = E.nothing
+
+
+--------------------------------------------------------------------
+-- Join monad: graph-related part
+--------------------------------------------------------------------
+
+
+-- | Identify the current representant of the node.
+getRepr :: (Functor m, Monad m, Ord i) => i -> JoinT i f a m i
+getRepr k = D.repr k <$> S.gets disjS
+
+
+-- | Set the representant of the node.
+mkReprOf :: (Monad m, Ord i) => i -> i -> JoinT i f a m ()
+mkReprOf x y = S.modify $ \s ->
+        s {disjS = D.mkReprOf x y $ disjS s}
+
+
+-- | Retrieve node hidden behind the given identifier.
+getNode :: (Functor m, Monad m, Ord i) => i -> JoinT i f a m (Node i f a)
+getNode i = maybeT =<<
+    M.lookup <$> getRepr i <*> S.gets (nodeMap.graph)
+
+
+-- | Set node under the given identifier.
+setNode :: (Monad m, Ord i) => i -> Node i f a -> JoinT i f a m ()
+setNode i x = S.modify $ \s ->
+    let g = graph s
+    in  s { graph = g { nodeMap = M.insert i x (nodeMap g) } }
+
+
+-- | Remove node under the given identifier.
+remNode :: (Monad m, Ord i) => i -> JoinT i f a m ()
+remNode i = S.modify $ \s ->
+    let g = graph s
+    in  s { graph = g { nodeMap = M.delete i (nodeMap g) } }
 
 
 --------------------------------------------------------------------
@@ -146,10 +219,10 @@ data Fail
 
 -- | Pop next pair of nodes from the queue.  If the nodes are
 -- not distinct, return `Equal`.
-popNext :: (Functor m, Monad m) => JoinT f a m (Either Fail (ID, ID))
+popNext :: (Functor m, Monad m, Ord i) => JoinT i f a m (Either Fail (i, i))
 popNext = E.runEitherT $ do
     (i0, j0) <- E.tryJust Empty =<< lift pop
-    (i, j) <- lift . liftGraph $ (,)
+    (i, j) <- lift $ (,)
         <$> getRepr i0
         <*> getRepr j0
     E.tryAssert Equal $ i /= j
@@ -173,35 +246,34 @@ whileNotEmpty cond m = do
 
 
 -- | Merge all node-pairs remaining in the queue.
-mergeRest :: (Functor m, Monad m, Ord f, Eq a) => JoinT f a m ()
+mergeRest :: (Functor m, Monad m, Ord i, Ord f, Eq a) => JoinT i f a m ()
 mergeRest = whileNotEmpty popNext $ \(i, j) -> merge i j
 
 
 -- | Merge two nodes under the given identifiers and populate
 -- queue with new node-pairs which need to be joined.
 merge
-    :: (Functor m, Monad m, Ord f, Eq a)
-    => ID -> ID -> JoinT f a m ()
-merge i j = void $ runMaybeT $ do
-    n <- MaybeT $ liftGraph $ getNode i
-    m <- MaybeT $ liftGraph $ getNode j
-    lift $ doit n m
+    :: (Functor m, Monad m, Ord i, Ord f, Eq a)
+    => i -> i -> JoinT i f a m ()
+merge i j = do
+    n <- getNode i
+    m <- getNode j
+    doit n m
   where
     doit (Interior p) (Interior q) = do
         -- TODO: We could probably speed it up by checking if some
         -- of the pairs have not been already joined.
         mapM_ push $ joint p q
-        liftGraph $ do
-            setNode i $ Interior $ M.union p q
-            remNode j >> i `mkReprOf` j
+        setNode i $ Interior $ M.union p q
+        remNode j >> i `mkReprOf` j
     doit (Frontier _) (Interior q)
-        | M.null q  = liftGraph $ remNode j >> i `mkReprOf` j
+        | M.null q  = remNode j >> i `mkReprOf` j
         | otherwise = uniFail
     doit (Interior p) (Frontier _)
-        | M.null p  = liftGraph $ remNode i >> j `mkReprOf` i
+        | M.null p  = remNode i >> j `mkReprOf` i
         | otherwise = uniFail
     doit (Frontier x) (Frontier y)
-        | x == y    = liftGraph $ remNode j >> i `mkReprOf` j
+        | x == y    = remNode j >> i `mkReprOf` j
         | otherwise = uniFail
     joint x y = M.elems $ M.intersectionWith (,) x y
 
@@ -213,52 +285,25 @@ merge i j = void $ runMaybeT $ do
 
 -- | Join the two given nodes (and more, when necesseary)
 -- in the feature graph.
-join :: (Functor m, Monad m, Ord f, Eq a) => ID -> ID -> JoinT f a m ()
+join
+    :: (Functor m, Monad m, Ord i, Ord f, Eq a)
+    => i -> i -> JoinT i f a m ()
 join i j = merge i j >> mergeRest
 
 
 -- | Join the given pairs of nodes (and more, when necesseary)
 -- in the feature graph.
 joinMany
-    :: (Functor m, Monad m, Ord f, Eq a)
-    => [(ID, ID)] -> JoinT f a m ()
+    :: (Functor m, Monad m, Ord i, Ord f, Eq a)
+    => [(i, i)] -> JoinT i f a m ()
 joinMany = mapM_ $ uncurry join
 
 
 --------------------------------------------------------------------
--- Update identifiers
+-- Utility
 --------------------------------------------------------------------
 
 
--- -- | Traverse the graph and update node identifiers.  As a side effect,
--- -- the `jsDs` component of the state will be cleared.
--- updateIDs :: (Uni i f a, Monad m) => JoinT i f a m ()
--- updateIDs = S.modify $ \JoinS{..} ->
---     let upd (Interior m) = Interior $ M.map rep m
---         upd (Frontier x) = Frontier x
---         rep = flip D.repr jsDs
---         both f (x, y) = (f x, f y)
---     in JoinS
---         { jsQu  = fmap (both rep) jsQu
---         -- Keys do not need to be updated, becase an invariant is
---         -- preserved that only representants are stored as keys.
---         -- TODO: Give this info also in a more visible place!
---         , jsFg  = M.map upd jsFg
---         -- The implementator has to be aware, that after this step
---         -- using the `repr` function on a node which is not present
---         -- in the graph (e.g. it has been removed) will lead to an
---         -- incorrect result.
---         , jsDs  = D.empty }
-
-
---------------------------------------------------------------------
--- Misc
---------------------------------------------------------------------
-
-
--- -- | Sequnce to monadic actions and return result of the first one.
--- (<<) :: Monad m => m a -> m b -> m a
--- m << n = do
---     x <- m
---     _ <- n
---     return x
+-- | Lift a maybe value to a MaybeT transformer.
+maybeT :: Monad m => Maybe a -> MaybeT m a
+maybeT = MaybeT . return

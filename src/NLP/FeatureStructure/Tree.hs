@@ -38,18 +38,14 @@ import qualified Data.Map.Strict as M
 import           Data.String (IsString (..))
 
 
--- import           NLP.FeatureStructure.Core
-import qualified NLP.FeatureStructure.Graph2 as G
-import qualified NLP.FeatureStructure.Join2 as J
+import           NLP.FeatureStructure.Core
+import qualified NLP.FeatureStructure.Graph as G
+import qualified NLP.FeatureStructure.Join as J
 
 
 --------------------------------------------------------------------
 -- Types
 --------------------------------------------------------------------
-
-
--- | Graph identifier.
-type ID = G.ID
 
 
 -- | An attribute-value map.
@@ -152,7 +148,7 @@ type Con i f a b = ConT i f a Identity b
 -- | Run the conversion transformer.
 runConT
     :: (Functor m, Monad m, Ord i, Ord f, Eq a)
-    => ConT i f a m b -> m (Maybe (b, G.Res ID ID f a))
+    => ConT i f a m b -> m (Maybe (b, J.Res ID ID f a))
 runConT con = flip J.runJoinT G.empty $ do
     -- First we need to convert a tree to a trivial feature graph
     -- (tree stored as `conC`) and identify nodes which need to be
@@ -170,7 +166,7 @@ runConT con = flip J.runJoinT G.empty $ do
 runCon
     :: (Ord i, Ord f, Eq a)
     => Con i f a b
-    -> Maybe (b, G.Res ID ID f a)
+    -> Maybe (b, J.Res ID ID f a)
 runCon = runIdentity . runConT
 
 
