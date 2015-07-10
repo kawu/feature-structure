@@ -29,7 +29,6 @@ library
       , monad-atom              >= 0.4      && < 0.5
       , text                    >= 0.11     && < 1.3
       , vector                  >= 0.10     && < 0.11
-      -- , data-memocombinators    >= 0.5      && < 0.6
       , monad-memo              >= 0.4      && < 0.5
       , monad-loops             >= 0.4      && < 0.5
       , graphviz                >= 2999.16  && < 2999.17
@@ -37,22 +36,32 @@ library
     exposed-modules:
         NLP.FeatureStructure.Core
       , NLP.FeatureStructure.Tree
-      -- , NLP.FeatureStructure.Tree.Tests
       , NLP.FeatureStructure.AVM
-      -- , NLP.FeatureStructure.Graph
-      , NLP.FeatureStructure.Graph2
-      -- , NLP.FeatureStructure.Join
-      , NLP.FeatureStructure.Join2
+      , NLP.FeatureStructure.Graph
+      -- , NLP.FeatureStructure.Graph.Tests
+      , NLP.FeatureStructure.Join
       , NLP.FeatureStructure.Unify
-      -- , NLP.FeatureStructure.Unify.Tests
-      , NLP.FeatureStructure.Reid2
-      -- , NLP.FeatureStructure.Parse
-      -- , NLP.FeatureStructure.Parse.Tests
+      , NLP.FeatureStructure.Reid
 
     other-modules:
         NLP.FeatureStructure.DisjSet
 
     ghc-options: -Wall -O2
+
+test-suite test
+    default-language:
+        Haskell2010
+    type:
+        exitcode-stdio-1.0
+    hs-source-dirs:
+        tests
+      , src
+    main-is:
+        test.hs
+    build-depends:
+        tasty                   >= 0.10
+      , tasty-quickcheck        >= 0.8
+      , QuickCheck              >= 2.6
 
 source-repository head
     type: git

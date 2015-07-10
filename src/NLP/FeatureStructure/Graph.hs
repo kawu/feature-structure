@@ -14,6 +14,7 @@ module NLP.FeatureStructure.Graph
   Graph (..)
 , Node (..)
 , empty
+, size
 , getNode
 , getIDs
 
@@ -40,18 +41,14 @@ import           Prelude hiding (log)
 import           Control.Applicative ((<$>))
 import qualified Control.Applicative as App
 import           Control.Monad (forM_, when, guard)
--- import           Control.Monad.Identity (Identity)
 import qualified Control.Monad.State.Strict as S
 import           Control.Monad.Trans.Maybe (MaybeT(..))
--- import           Control.Monad.Trans.Either (EitherT(..))
 import qualified Control.Monad.Trans.Either as E
 import           Control.Monad.Trans.Class (lift)
 
--- import qualified Data.Traversable as Tr
 import qualified Data.Map.Strict as M
 import qualified Data.Set as Set
 import           Data.List (intercalate)
--- import qualified Data.IntMap.Strict as I
 import           Data.Maybe (isJust, catMaybes)
 
 
@@ -77,6 +74,11 @@ data Node i f a
 -- | An empty graph.
 empty :: Graph i f a
 empty = Graph M.empty
+
+
+-- | Size of the graph (i.e. the number of the nodes).
+size :: Graph i f a -> Int
+size Graph{..} = M.size nodeMap
 
 
 -- | Retrieve node under the given identifier.
