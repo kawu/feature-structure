@@ -8,11 +8,14 @@ module NLP.FeatureStructure.Graph.Tests where
 import           Control.Applicative ((<$>))
 import qualified Data.Set as S
 import qualified Data.Map.Strict as M 
+import           Data.Maybe (isJust)
 
 import qualified Test.QuickCheck         as QC
 -- import qualified Test.QuickCheck.Monadic as QC
-import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty              (TestTree, testGroup)
 import           Test.Tasty.QuickCheck   (testProperty)
+import           Test.HUnit              (Assertion, (@?=))
+import           Test.Tasty.HUnit        (testCase)
 
 
 import qualified NLP.FeatureStructure.Graph as G
@@ -23,28 +26,84 @@ import qualified NLP.FeatureStructure.Graph as G
 --------------------------------------------------------------------
 
 
--- | Graph parametrized with SInts.
-type SGraph = Graph SInt SInt SInt SInt
-
-
--- | SGraph with info about the root.
-type SGraphID = GraphID SInt SInt SInt SInt
-
-
 -- | The actual test set.
 tests :: TestTree
 tests = testGroup "NLP.FeatureStructure.Graph"
-    [ testProperty "arbitrary graph valid"
-        (valid . toGraph :: SGraph -> Bool)
+    [ testCase "testTrim" testTrim
+    , testProperty "arbitrary graph valid"
+        (G.valid . toGraph :: SGraph -> Bool)
     , testProperty "graph equals to itself" eqItself
     , testProperty "size of mapIDs (+1) the same" checkMapIDs
     , testProperty "transitivity of the comparison" checkTrans
+    , testProperty "correctness of `fromTwo`" checkTwo
+    , testProperty "dummy trimming doesn't remove nodes" checkTrimNo
+    , testProperty "full trimming remove all nodes" checkTrimAll
     ]
+
+
+--------------------------------------------------------------------
+-- Unit tests
+--------------------------------------------------------------------
+
+
+-- | Check that trimming works properly.
+testTrim :: Assertion
+testTrim = do
+    let b = G.equal g2 3 g3 3
+    G.size g3 @?= 4
+    b @?= True
+  where
+    mkI = G.Interior . M.fromList
+    mkF = G.Frontier
+    g1 = G.Graph $ M.fromList
+        [ (1, mkI [('a', 2)])
+        , (2, mkF 'a')
+        , (3, mkI [('a', 2), ('b', 4)])
+        , (4, mkI [('a', 5)])
+        , (5, mkI [('a', 3)]) ]
+    g2 = G.Graph $ M.fromList
+        [ (2, mkF 'a')
+        , (3, mkI [('a', 2), ('b', 4)])
+        , (4, mkI [('a', 5)])
+        , (5, mkI [('a', 3)]) ]
+    g3 = G.trim g1 [4]
 
 
 --------------------------------------------------------------------
 -- Properties
 --------------------------------------------------------------------
+
+
+-- | Check that trimming removes all nodes if we trim
+-- w.r.t. an empty set of nodes.
+checkTrimAll :: SGraphID -> Bool
+checkTrimAll = G.null . flip G.trim [] . fst . toGraphID
+
+
+-- | Check that trimming doesn't remove any nodes if we trim
+-- w.r.t. all nodes in the input graph.
+checkTrimNo :: SGraphID -> Bool
+checkTrimNo s =
+    G.equal g i g' i
+  where
+    (g, i) = toGraphID s
+    g' = G.trim g $ S.toList $ G.getIDs g
+
+
+-- | Check that `G.fromTwo` produces a graph containing all
+-- nodes from the two input graphs and that it doesn't contain
+-- any other nodes.
+checkTwo :: SGraph -> SGraph -> Bool
+checkTwo s1' s2' =
+    check s1 Left && check s2 Right &&
+    G.size s1 + G.size s2 == G.size r
+  where
+    s1 = toGraph s1'
+    s2 = toGraph s2'
+    r = G.fromTwo s1 s2
+    check s f = and
+        [ isJust $ G.getNode (f i) r
+        | i <- S.toList $ G.getIDs s ]
 
 
 -- | Transitivity of the comparison.
@@ -64,14 +123,17 @@ checkTrans s1 s2 s3 =
 
 -- | Size of the result of mapIDs (+1) should not change.
 -- Moreover, the result should still be valid (not corrupted).
-checkMapIDs :: SGraph -> Bool
-checkMapIDs g0 =
+-- Finally, the two graph should be equal to each other.
+checkMapIDs :: SGraphID -> Bool
+checkMapIDs s0 =
     let plus1 (SInt x) = SInt $ x + 1
         modID (Left i) = Left $ plus1 i
         modID (Right j) = Right $ plus1 j
-        g1 = toGraph g0
-        g2 = G.mapIDs modID g1
-    in  G.size g1 == G.size g2 && valid g2
+        (g1, i1) = toGraphID s0
+        (g2, i2) = ( G.mapIDs modID g1
+                   , modID i1 )
+    in  G.size g1 == G.size g2 &&
+        G.valid g2 && G.equal g1 i1 g2 i2
 
 
 -- | Is the graph equal to itself?
@@ -81,30 +143,17 @@ eqItself s =
     in  G.equal g i g i
 
 
--- | Is it not `corrupted`?
-valid :: (Ord i) => G.Graph i f a -> Bool
-valid = not . corrupted
-
-
--- | The graph is corrupted if one of its nodes points to an
--- inexistent node.
-corrupted :: (Ord i) => G.Graph i f a -> Bool
-corrupted g =
-    not $ and [check i | i <- S.toList $ G.getIDs g]
-  where
-    check i = case G.getNode i g of
-        Nothing -> False
-        Just n  -> case n of
-            G.Interior m -> and $ map member $ M.elems m
-            G.Frontier _ -> True
-    member j = case G.getNode j g of
-        Nothing -> False
-        Just _  -> True
-
-
 --------------------------------------------------------------------
 -- Alternative graph representation
 --------------------------------------------------------------------
+
+
+-- | Graph parametrized with SInts.
+type SGraph = Graph SInt SInt SInt SInt
+
+
+-- | SGraph with info about the root.
+type SGraphID = GraphID SInt SInt SInt SInt
 
 
 -- | Alternative definition of a graph, should be easier to
@@ -226,4 +275,4 @@ newtype SInt = SInt Int
 
 
 instance QC.Arbitrary SInt where
-    arbitrary = SInt <$> QC.choose (1, 25)
+    arbitrary = SInt <$> QC.choose (1, 10)

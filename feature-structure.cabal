@@ -61,6 +61,8 @@ test-suite test
     build-depends:
         tasty                   >= 0.10
       , tasty-quickcheck        >= 0.8
+      , tasty-hunit             >= 0.9
+      , HUnit                   >= 1.2
       , QuickCheck              >= 2.6
 
 source-repository head

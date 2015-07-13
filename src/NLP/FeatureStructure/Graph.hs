@@ -13,6 +13,8 @@ module NLP.FeatureStructure.Graph
 -- * Basic types
   Graph (..)
 , Node (..)
+, null
+, valid
 , empty
 , size
 , getNode
@@ -36,7 +38,7 @@ module NLP.FeatureStructure.Graph
 ) where
 
 
-import           Prelude hiding (log)
+import           Prelude hiding (log, null)
 
 import           Control.Applicative ((<$>))
 import qualified Control.Applicative as App
@@ -71,6 +73,11 @@ data Node i f a
     deriving (Show, Eq, Ord)
 
 
+-- | Is the graph empty?
+null :: Graph i f a -> Bool
+null = M.null . nodeMap
+
+
 -- | An empty graph.
 empty :: Graph i f a
 empty = Graph M.empty
@@ -89,6 +96,28 @@ getNode i = M.lookup i . nodeMap
 -- | Get the set of node identifiers in the graph.
 getIDs :: Ord i => Graph i f a -> Set.Set i
 getIDs = M.keysSet . nodeMap
+
+
+-- | The graph is valid if all its internal identifiers
+-- point to existing nodes.
+valid :: (Ord i) => Graph i f a -> Bool
+valid = not . corrupted
+
+
+-- | The graph is corrupted if one of its nodes points to an
+-- non-existent node.
+corrupted :: (Ord i) => Graph i f a -> Bool
+corrupted g =
+    not $ and [check i | i <- Set.toList $ getIDs g]
+  where
+    check i = case getNode i g of
+        Nothing -> False
+        Just n  -> case n of
+            Interior m -> and $ map member $ M.elems m
+            Frontier _ -> True
+    member j = case getNode j g of
+        Nothing -> False
+        Just _  -> True
 
 
 -- | Check whether the two graphs are equal given node
