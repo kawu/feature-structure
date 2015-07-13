@@ -9,9 +9,11 @@ import           Control.Monad (void)
 import           Control.Monad.Trans.Class (lift)
 import           Control.Monad.Trans.Maybe (MaybeT(..))
 import qualified Data.Map.Strict as M
+import qualified Data.Set as S
 import           Data.Maybe (isJust)
 
 import           Test.Tasty              (TestTree, testGroup)
+import           Test.Tasty.QuickCheck   (testProperty)
 import           Test.HUnit              (Assertion, (@?=))
 import           Test.Tasty.HUnit        (testCase)
 
@@ -20,6 +22,8 @@ import           Test.Tasty.HUnit        (testCase)
 import qualified NLP.FeatureStructure.Graph as G
 import qualified NLP.FeatureStructure.Unify as U
 import qualified NLP.FeatureStructure.Join as J
+
+import qualified NLP.FeatureStructure.Graph.Tests as GT
 
 
 --------------------------------------------------------------------
@@ -36,7 +40,33 @@ tests = testGroup "NLP.FeatureStructure.Unify"
     , testCase "test3" test3
     , testCase "test4" test4
     , testCase "test4v2" test4v2
+    , testCase "test5" test5
+    , testCase "test5v2" test5v2
+    , testCase "test6" test6
+    , testProperty "valid unification converter" checkConv
     ]
+
+
+--------------------------------------------------------------------
+-- Properties
+--------------------------------------------------------------------
+
+
+-- | Verify that the result of unification of two graphs contains
+-- the converter which provides valid IDs for all IDs of the
+-- input graphs.
+checkConv :: GT.SGraphID -> GT.SGraphID -> Bool
+checkConv s1 s2 = case U.unify g1 g2 [(i1, i2)] of
+    Nothing -> True
+    Just J.Res{..} ->
+        check g1 (convID . Left)  resGraph &&
+        check g2 (convID . Right) resGraph
+  where
+    (g1, i1) = GT.toGraphID s1
+    (g2, i2) = GT.toGraphID s2
+    check g f g' = and
+        [ isJust $ G.getNode (f i) g'
+        | i <- S.toList $ G.getIDs g ]
 
 
 --------------------------------------------------------------------
@@ -70,7 +100,7 @@ test2 = do
 
 
 test2v2 :: Assertion
-test2v2 = void $ runMaybeT $ do
+test2v2 = onJust $ do
     (g3, r) <- maybeT $ unify g1 1 g2 1
     lift $ G.equal g1 1 g3 r @?= True
   where
@@ -81,7 +111,7 @@ test2v2 = void $ runMaybeT $ do
 
 
 test3 :: Assertion
-test3 = void $ runMaybeT $ do
+test3 = onJust $ do
     (g3, i) <- maybeT $ unify g1 1 g2 1
     lift $ G.equal g1 1 g3 i @?= True
   where
@@ -107,7 +137,7 @@ test4 = do
 
 
 test4v2 :: Assertion
-test4v2 = void $ runMaybeT $ do
+test4v2 = onJust $ do
     (g3, i) <- maybeT $ unify g1 1 g2 1
     lift $ G.equal g3 i r 1 @?= True
   where
@@ -127,77 +157,69 @@ test4v2 = void $ runMaybeT $ do
         , (2, mkF 'x') ]
 
 
--- test5 :: Maybe (Graph Char Char)
--- test5 = runReid $ do
---     g1 <- (,) <$> reid 1 <*> reidGraph f1
---     split
---     g2 <- (,) <$> reid 1 <*> reidGraph f2
---     return $ unify g1 g2
---   where
---     f1 = mkGraph
---         [ (1, Interior $ M.fromList
---             [('a', 2), ('b', 2), ('c', 3)])
---         , (2, Frontier 'x')
---         , (3, Interior $ M.fromList [('a', 4)])
---         , (4, Frontier 'x') ]
---     f2 = mkGraph
---         [ (1, Interior $ M.fromList
---             [('a', 2), ('b', 3), ('c', 3)])
---         , (2, Interior $ M.fromList [('a', 4)])
---         , (3, Frontier 'x')
---         , (4, Frontier 'x') ]
--- 
--- 
--- test5v2 :: Maybe (Graph Char Char)
--- test5v2 = runReid $ do
---     g1 <- (,) <$> reid 1 <*> reidGraph f1
---     split
---     g2 <- (,) <$> reid 1 <*> reidGraph f2
---     return $ unify g1 g2
---   where
---     f1 = mkGraph
---         [ (1, Interior $ M.fromList
---             [('a', 2), ('b', 2), ('c', 3)])
---         , (2, Interior M.empty)
---         , (3, Interior $ M.fromList [('a', 4)])
---         , (4, Frontier 'x') ]
---     f2 = mkGraph
---         [ (1, Interior $ M.fromList
---             [('a', 2), ('b', 3), ('c', 3)])
---         , (2, Interior $ M.fromList [('a', 4)])
---         , (3, Interior M.empty)
---         , (4, Frontier 'x') ]
--- 
--- 
--- test6 :: Maybe (Graph Char Char)
--- test6 = runReid $ do
---     g1 <- (,) <$> reid 1 <*> reidGraph f1
---     split
---     g2 <- (,) <$> reid 1 <*> reidGraph f2
---     return $ unify g1 g2
---   where
---     f1 = mkGraph
---         [ (1, Interior $ M.fromList
---             [('a', 1), ('b', 2)])
---         , (2, Interior $ M.fromList [('a', 3)])
---         , (3, Interior M.empty) ]
---     f2 = mkGraph
---         [ (1, Interior $ M.fromList [('a', 2)])
---         , (2, Interior $ M.fromList
---             [('a', 1), ('b', 2)]) ]
+test5 :: Assertion
+test5 = do
+    let b = isJust $ unify g1 1 g2 1
+    b @?= False
+  where
+    g1 = mkG
+        [ (1, mkI
+            [('a', 2), ('b', 2), ('c', 3)])
+        , (2, mkF 'x')
+        , (3, mkI [('a', 4)])
+        , (4, mkF 'x') ]
+    g2 = mkG
+        [ (1, mkI
+            [('a', 2), ('b', 3), ('c', 3)])
+        , (2, mkI [('a', 4)])
+        , (3, mkF 'x')
+        , (4, mkF 'x') ]
 
 
-------------------------------------
--- Helpers
-------------------------------------
+test5v2 :: Assertion
+test5v2 = onJust $ do
+    (g3, i) <- maybeT $ unify g1 1 g2 1
+    lift $ G.equal g3 i r 1 @?= True
+  where
+    g1 = mkG
+        [ (1, mkI
+            [('a', 2), ('b', 2), ('c', 3)])
+        , (2, mkI [])
+        , (3, mkI [('a', 4)])
+        , (4, mkF 'x') ]
+    g2 = mkG
+        [ (1, mkI
+            [('a', 2), ('b', 3), ('c', 3)])
+        , (2, mkI [('a', 4)])
+        , (3, mkI [])
+        , (4, mkF 'x') ]
+    r = mkG
+        [ (1, mkI
+            [('a', 2), ('b', 2), ('c', 2)])
+        , (2, mkI [('a', 3)])
+        , (3, mkF 'x') ]
 
 
--- uni :: Int -> Graph a b -> Int -> Graph a b -> Maybe (Graph a b)
--- uni i x j y = unify (i, x) (j, y)
+test6 :: Assertion
+test6 = onJust $ do
+    (g3, i) <- maybeT $ unify g1 1 g2 1
+    lift $ G.equal g3 i r 1 @?= True
+  where
+    g1 = mkG
+        [ (1, mkI
+            [('a', 1), ('b', 2)])
+        , (2, mkI [('a', 3)])
+        , (3, mkI []) ]
+    g2 = mkG
+        [ (1, mkI [('a', 2)])
+        , (2, mkI
+            [('a', 1), ('b', 2)]) ]
+    r = mkG
+        [ (1, mkI [('a', 1), ('b', 1)]) ]
 
 
 --------------------------------------------------------------------
--- Utility
+-- Utilities
 --------------------------------------------------------------------
 
 
@@ -229,3 +251,13 @@ unify g i h j = case U.unify g h [(i, j)] of
 
 maybeT :: Monad m => Maybe a -> MaybeT m a
 maybeT = MaybeT . return
+
+
+-- | Assertion from a MaybeT computation which fails if the
+-- MaybeT transformer returns Nothing.
+onJust :: MaybeT IO a -> Assertion
+onJust m = do
+    x <- runMaybeT m
+    case x of
+        Nothing -> fail "MaybeT returned Nothing"
+        Just _  -> return ()
