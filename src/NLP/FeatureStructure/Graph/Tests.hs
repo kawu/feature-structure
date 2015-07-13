@@ -30,6 +30,9 @@ import qualified NLP.FeatureStructure.Graph as G
 tests :: TestTree
 tests = testGroup "NLP.FeatureStructure.Graph"
     [ testCase "testTrim" testTrim
+    , testCase "testEq1" testEq1
+    , testCase "testCmp1" testCmp1
+    -- , testCase "testSub1" testSub1
     , testProperty "arbitrary graph valid"
         (G.valid . toGraph :: SGraph -> Bool)
     , testProperty "graph equals to itself" eqItself
@@ -53,20 +56,62 @@ testTrim = do
     G.size g3 @?= 4
     b @?= True
   where
-    mkI = G.Interior . M.fromList
-    mkF = G.Frontier
-    g1 = G.Graph $ M.fromList
+--     mkG = G.Graph . M.fromList
+--     mkI = G.Interior . M.fromList
+--     mkF = G.Frontier
+    g1 = mkG
         [ (1, mkI [('a', 2)])
         , (2, mkF 'a')
         , (3, mkI [('a', 2), ('b', 4)])
         , (4, mkI [('a', 5)])
         , (5, mkI [('a', 3)]) ]
-    g2 = G.Graph $ M.fromList
+    g2 = mkG
         [ (2, mkF 'a')
         , (3, mkI [('a', 2), ('b', 4)])
         , (4, mkI [('a', 5)])
         , (5, mkI [('a', 3)]) ]
     g3 = G.trim g1 [4]
+
+
+-- | A more tricky test where equality check should fail.
+testEq1 :: Assertion
+testEq1 = do
+    G.equal g1 1 g2 1 @?= False
+  where
+    g1 :: G.Graph Int Char ()
+    g1 = mkG
+        [ (1, mkI [('a', 2)])
+        , (2, mkI [('a', 1)]) ]
+    g2 = mkG
+        [ (1, mkI [('a', 1)]) ]
+
+
+-- | Similar to 'testEq1' but with comparison.
+testCmp1 :: Assertion
+testCmp1 = do
+    G.compare' g1 1 g2 1 @?= GT
+    G.compare' g2 1 g1 1 @?= LT
+  where
+    g1 :: G.Graph Int Char ()
+    g1 = mkG
+        [ (1, mkI [('a', 2)])
+        , (2, mkI [('a', 1)]) ]
+    g2 = mkG
+        [ (1, mkI [('a', 1)]) ]
+
+
+-- -- | Subsumption test.
+-- testSub1 :: Assertion
+-- testSub1 = do
+--     G.subsumes g1 1 g2 1 @?= True
+--     G.subsumes g2 1 g1 1 @?= False
+--   where
+--     g1 :: G.Graph Int Char ()
+--     g1 = mkG
+--         [ (1, mkI [('a', 2)])
+--         , (2, mkI [('a', 1)]) ]
+--     g2 = mkG
+--         [ (1, mkI [('a', 1)]) ]
 
 
 --------------------------------------------------------------------
@@ -276,3 +321,11 @@ newtype SInt = SInt Int
 
 instance QC.Arbitrary SInt where
     arbitrary = SInt <$> QC.choose (1, 10)
+
+
+-- mkG :: [(Int, Node)] -> Graph
+mkG = G.Graph . M.fromList
+-- mkI :: [(Char, Int)] -> Node
+mkI = G.Interior . M.fromList
+-- mkF :: Char -> Node
+mkF = G.Frontier

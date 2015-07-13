@@ -28,6 +28,10 @@ module NLP.FeatureStructure.Graph
 , compare'
 , compares
 
+-- -- * Subsumption
+-- , subsumes'
+-- , subsumes
+
 -- * Utility
 , mapIDs
 , fromTwo
@@ -46,12 +50,15 @@ import           Control.Monad (forM_, when, guard)
 import qualified Control.Monad.State.Strict as S
 import           Control.Monad.Trans.Maybe (MaybeT(..))
 import qualified Control.Monad.Trans.Either as E
-import           Control.Monad.Trans.Class (lift)
+-- import           Control.Monad.Trans.Class (lift)
 
 import qualified Data.Map.Strict as M
 import qualified Data.Set as Set
 import           Data.List (intercalate)
 import           Data.Maybe (isJust, catMaybes)
+
+-- import Debug.Trace (trace)
+-- import Unsafe.Coerce (unsafeCoerce)
 
 
 --------------------------------------------------------------------
@@ -126,14 +133,15 @@ equals
     :: (Ord i, Ord j, Eq f, Eq a)
     => Graph i f a      -- ^ The first feature graph
     -> Graph j f a      -- ^ The second feature graph
-    -> [(i, j)]   -- ^ Nodes from the first and the second graph
+    -> [(i, j)]         -- ^ Nodes from the first and the second graph
                         --   respectively which should correspond to
                         --   each other.
     -> Bool
 equals g h
 
     = isJust
-    . flip S.evalState Set.empty
+    . flip S.evalState
+        (M.empty, M.empty)
     . runMaybeT
     . mapM_ (uncurry checkIDs)
 
@@ -153,12 +161,34 @@ equals g h
     checkIDs i j = do
         -- mark two states as equal; the function returns true
         -- if nodes were not marked as equal earlier
-        b <- lift $ markEqual i j
+        b <- markCorr i j
         when b $ do
             -- this should not actually fail 
             p <- maybeT $ getNode i g
             q <- maybeT $ getNode j h
             check p q
+
+    -- | We store information about mutually corresponding nodes
+    -- in the underlying state.  We need to make sure that there
+    -- is a homomorphism (1-to-1 function) between the nodes of
+    -- the two graphs, this is why we are using maps to store
+    -- this information.
+    markCorr i j = do
+        (m1, m2) <- S.get 
+        case (M.lookup i m1, M.lookup j m2) of
+            (Just j', Just i')  -> do
+                guard $ i == i' && j == j'
+                return False
+            (Nothing, Nothing)  -> do
+                S.put ( M.insert i j m1
+                      , M.insert j i m2 )
+                return True
+            (_, _) -> App.empty
+--     markCorr i j = S.state $ \s ->
+--         if Set.member (i, j) s
+--             then (False, s)
+--             else (True, Set.insert (i, j) s)
+
 
 -- | Check whether the two graphs are equal given node
 -- identifiers which must correspond to each other.
@@ -185,7 +215,8 @@ compares
 compares g h
 
     = mkOrd
-    . flip S.evalState Set.empty
+    . flip S.evalState
+        (M.empty, M.empty)
     . E.runEitherT
     . mapM_ (uncurry checkIDs)
 
@@ -219,12 +250,29 @@ compares g h
     checkIDs i j = do
         -- mark two states as equal; the function returns true
         -- if nodes were not marked as equal earlier
-        b <- lift $ markEqual i j
+        b <- markCorr i j
         when b $ do
             -- TODO: well, these should actualy fail with error!
             p <- maybeE LT $ getNode i g
             q <- maybeE GT $ getNode j h
             check p q
+
+    -- mark two node IDs as mutually corresponding; compare with
+    -- the analogous function from `equals`. 
+    markCorr i j = do
+        (m1, m2) <- S.get 
+        case (M.lookup i m1, M.lookup j m2) of
+            (Just j', Just i')  -> do
+                -- guard $ i == i' && j == j'
+                when (i /= i') (E.left LT)
+                when (j /= j') (E.left GT)
+                return False
+            (Nothing, Nothing)  -> do
+                S.put ( M.insert i j m1
+                      , M.insert j i m2 )
+                return True
+            (Just _, Nothing)   -> E.left LT
+            (Nothing, Just _)   -> E.left GT
 
 
 -- | Compare two graphs given node identifiers which must
@@ -239,14 +287,90 @@ compare'
 compare' g i h j = compares g h [(i, j)]
 
 
--- | Mark two nodes as equal and return info if they were not
--- already marked as such (i.e. if marking was effective).
--- A utility function for both `compares` and `equals`.
-markEqual :: (Ord i, Ord j) => i -> j -> S.State (Set.Set (i, j)) Bool
-markEqual i j = S.state $ \s ->
-    if Set.member (i, j) s
-        then (False, s)
-        else (True, Set.insert (i, j) s)
+-- -- | Mark two nodes as equal and return info if they were not
+-- -- already marked as such (i.e. if marking was effective).
+-- -- A utility function for both `compares` and `equals`.
+-- markEqual :: (Ord i, Ord j) => i -> j -> S.State (Set.Set (i, j)) Bool
+-- markEqual i j = S.state $ \s ->
+--     if Set.member (i, j) s
+--         then (False, s)
+--         else (True, Set.insert (i, j) s)
+
+
+--------------------------------------------------------------------
+-- Subsumption
+--------------------------------------------------------------------
+
+
+-- -- | 'g `subsumes` h' if and only if 'h' is more specific
+-- -- (provides more information) than 'g'.
+-- subsumes'
+--     :: (Ord i, Ord j, Ord f, Eq a)
+--     => Graph i f a  -- ^ The first feature graph
+--     -> Graph j f a  -- ^ The second feature graph
+--     -> [(i, j)]     -- ^ Nodes from the first and the second graph
+--                     --   respectively which should correspond to
+--                     --   each other.
+--     -> Bool
+-- subsumes' g h
+-- 
+--     = isJust
+--     . flip S.evalState Set.empty
+--     . runMaybeT
+--     . mapM_ (uncurry checkIDs)
+-- 
+--   where
+-- 
+--     -- compare two nodes; compare with the analog from `equals`:
+--     check (Interior p) (Interior q) = do
+--         guard $ M.keysSet p `Set.isSubsetOf` M.keysSet q
+--         let xs = Set.toList $ Set.intersection
+--                     (M.keysSet p) (M.keysSet q)
+--         forM_ xs $ \x -> checkIDs (p M.! x) (q M.! x)
+--     check (Frontier x) (Frontier y) = guard $ x == y
+--     check (Interior p) (Frontier _) = guard $ M.null p
+--     check _ _ = App.empty
+-- 
+--     -- compare two nodes represented by their identifiers;
+--     -- note that implementation of this function is very similar
+--     -- to the one within `equals` or `compares`.
+--     checkIDs i j = do
+--         -- mark two states as equal; the function returns true
+--         -- if nodes were not already marked as corresponding to
+--         -- each other
+--         b <- markCorr i j
+--         when b $ do
+--             -- TODO: well, these should actualy fail with error!
+--             p <- maybeT $ getNode i g
+--             q <- maybeT $ getNode j h
+--             check p q
+-- 
+--     -- mark two node IDs as mutually corresponding; compare with
+--     -- the analogous function from `equals`.   The important
+--     -- difference here is that 
+--     markCorr i j = do
+--         (m1, m2) <- S.get 
+--         case (M.lookup i m1, M.lookup j m2) of
+--             (Just j', Just i')  -> do
+--                 guard $ i == i' && j == j'
+--                 return False
+--             (Nothing, Nothing)  -> do
+--                 S.put ( M.insert i j m1
+--                       , M.insert j i m2 )
+--                 return True
+--             (_, _) -> App.empty
+-- 
+-- 
+-- -- | 'g `subsumes` h' if and only if 'h' is more specific
+-- -- (provides more information) than 'g'.
+-- subsumes
+--     :: (Ord i, Ord j, Ord f, Eq a)
+--     => Graph i f a  -- ^ The first feature graph
+--     -> i            -- ^ Node from the first graph
+--     -> Graph j f a  -- ^ The second feature graph
+--     -> j            -- ^ Node from the second graph
+--     -> Bool
+-- subsumes g i h j = subsumes' g h [(i, j)]
 
 
 --------------------------------------------------------------------
@@ -390,3 +514,8 @@ maybeT = MaybeT . return
 maybeE :: Monad m => e -> Maybe a -> E.EitherT e m a
 maybeE _ (Just x) = E.right x
 maybeE e Nothing  = E.left e
+
+
+-- -- | Only for debugging purposes!
+-- showIntPair :: (Int, Int) -> String
+-- showIntPair = show
