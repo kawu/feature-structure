@@ -31,6 +31,7 @@ tests :: TestTree
 tests = testGroup "NLP.FeatureStructure.Graph"
     [ testCase "testTrim" testTrim
     , testCase "testEq1" testEq1
+    -- , testCase "testEq2" testEq2
     , testCase "testCmp1" testCmp1
     -- , testCase "testSub1" testSub1
     , testProperty "arbitrary graph valid"
@@ -38,7 +39,7 @@ tests = testGroup "NLP.FeatureStructure.Graph"
     , testProperty "graph equals to itself" eqItself
     , testProperty "size of mapIDs (+1) the same" checkMapIDs
     , testProperty "transitivity of the comparison" checkTrans
-    , testProperty "correctness of `fromTwo`" checkTwo
+    -- , testProperty "correctness of `fromTwo`" checkTwo
     , testProperty "dummy trimming doesn't remove nodes" checkTrimNo
     , testProperty "full trimming remove all nodes" checkTrimAll
     ]
@@ -84,6 +85,22 @@ testEq1 = do
         , (2, mkI [('a', 1)]) ]
     g2 = mkG
         [ (1, mkI [('a', 1)]) ]
+
+
+-- -- | Another tricky test where equality check should,
+-- -- suprisingly, not fail.  The two graphs are equal from the
+-- -- unification point of view nevertheless.
+-- testEq2 :: Assertion
+-- testEq2 = do
+--     G.equal g1 1 g2 1 @?= True
+--   where
+--     g1 = mkG
+--         [ (1, mkI [('a', 2), ('b', 3)])
+--         , (2, mkF 'a')
+--         , (3, mkF 'a') ]
+--     g2 = mkG
+--         [ (1, mkI [('a', 2), ('b', 2)])
+--         , (2, mkF 'a') ]
 
 
 -- | Similar to 'testEq1' but with comparison.
@@ -135,20 +152,20 @@ checkTrimNo s =
     g' = G.trim g $ S.toList $ G.getIDs g
 
 
--- | Check that `G.fromTwo` produces a graph containing all
--- nodes from the two input graphs and that it doesn't contain
--- any other nodes.
-checkTwo :: SGraph -> SGraph -> Bool
-checkTwo s1' s2' =
-    check s1 Left && check s2 Right &&
-    G.size s1 + G.size s2 == G.size r
-  where
-    s1 = toGraph s1'
-    s2 = toGraph s2'
-    r = G.fromTwo s1 s2
-    check s f = and
-        [ isJust $ G.getNode (f i) r
-        | i <- S.toList $ G.getIDs s ]
+-- -- | Check that `G.fromTwo` produces a graph containing all
+-- -- nodes from the two input graphs and that it doesn't contain
+-- -- any other nodes.
+-- checkTwo :: SGraph -> SGraph -> Bool
+-- checkTwo s1' s2' =
+--     check s1 Left && check s2 Right &&
+--     G.size s1 + G.size s2 == G.size r
+--   where
+--     s1 = toGraph s1'
+--     s2 = toGraph s2'
+--     r = G.fromTwo s1 s2
+--     check s f = and
+--         [ isJust $ G.getNode (f i) r
+--         | i <- S.toList $ G.getIDs s ]
 
 
 -- | Transitivity of the comparison.

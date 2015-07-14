@@ -4,13 +4,14 @@
 module NLP.FeatureStructure.Unify.Tests where
 
 
-import           Control.Applicative ((<$>))
+import           Control.Applicative ((<$>), (<*>))
 import           Control.Monad (void)
 import           Control.Monad.Trans.Class (lift)
 import           Control.Monad.Trans.Maybe (MaybeT(..))
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import           Data.Maybe (isJust)
+import           Data.List (sort)
 
 import           Test.Tasty              (TestTree, testGroup)
 import           Test.Tasty.QuickCheck   (testProperty)
@@ -44,6 +45,8 @@ tests = testGroup "NLP.FeatureStructure.Unify"
     , testCase "test5v2" test5v2
     , testCase "test6" test6
     , testProperty "valid unification converter" checkConv
+    , testProperty "no frontier duplicates after unification" checkNoFrontDups
+    , testProperty "unification symmetric" checkSymmetric
     ]
 
 
@@ -67,6 +70,39 @@ checkConv s1 s2 = case U.unify g1 g2 [(i1, i2)] of
     check g f g' = and
         [ isJust $ G.getNode (f i) g'
         | i <- S.toList $ G.getIDs g ]
+
+
+-- | Verify that unification result doesn't contain frontier
+-- duplicates.
+checkNoFrontDups :: GT.SGraphID -> GT.SGraphID -> Bool
+checkNoFrontDups s1 s2 = case U.unify g1 g2 [(i1, i2)] of
+    Nothing -> True
+    Just J.Res{..} -> noDups $ atoms resGraph
+  where
+    (g1, i1) = GT.toGraphID s1
+    (g2, i2) = GT.toGraphID s2
+    -- check that there are no duplicate in the input list
+    noDups xs = sort xs == S.toList (S.fromList xs)
+    -- retrieve the list of frontier, atomic values
+    atoms G.Graph{..} =
+        [x | G.Frontier x <- M.elems nodeMap]
+
+
+-- | Check that unification is symmetric.
+checkSymmetric :: GT.SGraphID -> GT.SGraphID -> Bool
+checkSymmetric s1 s2 =
+    unify g1 g2 `egal` unify g2 g1
+  where
+    g1 = GT.toGraphID s1
+    g2 = GT.toGraphID s2
+    egal Nothing Nothing    = True
+    egal (Just x) (Just y)  = equal x y
+    egal _ _                = False
+    unify (g, i) (h, j) = case U.unify g h [(i, j)] of
+        Nothing -> Nothing
+        Just J.Res{..} -> Just
+            (resGraph, convID $ Left i)
+    equal (g, i) (h, j) = G.equal g i h j
 
 
 --------------------------------------------------------------------
@@ -145,12 +181,12 @@ test4v2 = onJust $ do
         [ (1, mkI
             [('a', 2), ('b', 2), ('c', 3)])
         , (2, mkF 'x')
-        , (3, mkF 'x') ]
+        , (3, mkI []) ]
     g2 = mkG
         [ (1, mkI
             [('a', 2), ('b', 3), ('c', 3)])
         , (2, mkF 'x')
-        , (3, mkF 'x') ]
+        , (3, mkI []) ]
     r = mkG
         [ (1, mkI
             [('a', 2), ('b', 2), ('c', 2)])
@@ -166,14 +202,12 @@ test5 = do
         [ (1, mkI
             [('a', 2), ('b', 2), ('c', 3)])
         , (2, mkF 'x')
-        , (3, mkI [('a', 4)])
-        , (4, mkF 'x') ]
+        , (3, mkI [('a', 2)]) ]
     g2 = mkG
         [ (1, mkI
             [('a', 2), ('b', 3), ('c', 3)])
-        , (2, mkI [('a', 4)])
-        , (3, mkF 'x')
-        , (4, mkF 'x') ]
+        , (2, mkI [('a', 3)])
+        , (3, mkF 'x') ]
 
 
 test5v2 :: Assertion

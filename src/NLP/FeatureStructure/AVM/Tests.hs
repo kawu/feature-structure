@@ -41,6 +41,7 @@ tests = testGroup "NLP.FeatureStructure.AVM"
     [ testCase "testEmpty" testEmpty
     , testCase "testCycle" testCycle
     , testCase "testOther" testOther
+    , testCase "testFrontDup" testFrontDup
     ]
 
 
@@ -86,6 +87,34 @@ testOther = onJust $ do
         [ (1, mkI [('a', 2)])
         , (2, mkI
             [('a', 1), ('b', 2)]) ]
+
+
+-- | Test if there are no frontier duplicates in the compiled
+-- graph.  TODO: We could have a QuickCheck property for that
+-- as well.
+testFrontDup :: Assertion
+testFrontDup = onJust $ do
+    (g, i) <- maybeT $ fromAVM a
+    lift $ G.equal g i h 1  @?= True
+    lift $ G.equal g i h' 1 @?= False
+  where
+    a = do
+        A.feat 'a' $ do
+            A.label 2
+            A.feat 'a' $ A.atom 'x'
+            A.feat 'b' $ A.label 2
+        A.feat 'b' $ A.atom 'x'
+    h = mkG
+        [ (1, mkI [('a', 2), ('b', 3)])
+        , (2, mkI
+            [('a', 3), ('b', 2)])
+        , (3, mkF 'x') ]
+    h' = mkG
+        [ (1, mkI [('a', 2), ('b', 3)])
+        , (2, mkI
+            [('a', 4), ('b', 2)])
+        , (3, mkF 'x')
+        , (4, mkF 'x') ]
 
 
 --------------------------------------------------------------------

@@ -34,7 +34,6 @@ module NLP.FeatureStructure.Graph
 
 -- * Utility
 , mapIDs
-, fromTwo
 , trim
 -- , printGraph
 , printTree
@@ -68,6 +67,20 @@ import           Data.Maybe (isJust, catMaybes)
   
 -- | A feature graph with edges labeled by features of type `f`
 -- and frontier nodes labeled with atomic values of type `a`.
+--
+-- WARNING: graphs are not valid by construction.  They can
+-- indeed contain frontier duplicates which should not be allowed
+-- at the level of unification.
+--
+-- If you create a graph by hand using this module, make sure
+-- that there are no frontier duplicates in the result.
+--
+-- TODO: The constructor should not be exported because it alows
+-- to create graphs with frontier duplicates.  On the other hand,
+-- maybe it is not necessary that graphs are correct by
+-- construction, it would be enough if graphs generated from
+-- trees are valid and also that unification preserves this
+-- property (which can be quick-checked). 
 newtype Graph i f a = Graph {
       nodeMap   :: M.Map i (Node i f a)
     } deriving (Show, Eq, Ord)
@@ -376,26 +389,6 @@ compare' g i h j = compares g h [(i, j)]
 --------------------------------------------------------------------
 -- Join two feature graphs
 --------------------------------------------------------------------
-
-
--- | Join two feature graphs.  Nodes from the first graph will be
--- marked as `Left`s, nodes from the second one -- as `Right`s. 
-fromTwo
-    :: (Ord i, Ord j)
-    => Graph i f a
-    -> Graph j f a
-    -> Graph (Either i j) f a
-fromTwo f g = Graph $ M.fromAscList $
-    (nodeList $ mapIDsMono Left f) ++
-    (nodeList $ mapIDsMono Right g)
-    where nodeList = M.toAscList . nodeMap
-
-
--- | Map keys of the feature graph using a strictly monotonic function.
-mapIDsMono :: Ord j => (i -> j) -> Graph i f a -> Graph j f a
-mapIDsMono f (Graph m) = Graph $ M.fromAscList
-    [ (f k, mapNodeIDs f v)
-    | (k, v) <- M.toAscList m ]
 
 
 -- | Map keys of the feature graph.

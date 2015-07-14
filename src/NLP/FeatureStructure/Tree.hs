@@ -27,7 +27,7 @@ module NLP.FeatureStructure.Tree
 ) where
 
 
--- import           Control.Applicative ((<$>))
+import           Control.Applicative ((<$>))
 import           Control.Monad (forM, forM_)
 import qualified Control.Monad.State.Strict as S
 import           Control.Monad.Identity (Identity, runIdentity)
@@ -127,14 +127,18 @@ data ConS i f a = ConS {
     -- | A counter for producing new identifiers.
       conC  :: Int
     -- | A mapping from old to new identifiers.
-    , conI  :: M.Map i (Set.Set ID) }
+    , conI  :: M.Map i (Set.Set ID)
+    -- | A mapping from atomic values to IDs.  Ensures that there
+    -- are no frontier duplicates in the conversion result.
+    , conA  :: M.Map a ID }
 
 
 -- | Initial value of the state.
 initConS :: ConS i f a
 initConS = ConS
     { conC  = 1
-    , conI  = M.empty }
+    , conI  = M.empty
+    , conA  = M.empty }
 
 
 -- | A conversion transformer. 
@@ -180,7 +184,7 @@ runCon = runIdentity . runConT
 
 -- | Convert the given named feature tree to a feature graph.
 fromFN
-    :: (Monad m, Ord i, Ord f, Eq a)
+    :: (Functor m, Monad m, Ord i, Ord f, Ord a)
     => FN i f a
     -> ConT i f a m ID
 fromFN FN{..} = do
@@ -191,21 +195,24 @@ fromFN FN{..} = do
 
 -- | Convert the given feature tree to a trivial feature graph.
 fromFT
-    :: (Monad m, Ord i, Ord f, Eq a)
+    :: (Functor m, Monad m, Ord i, Ord f, Ord a)
     => FT i f a
     -> ConT i f a m ID
 fromFT (Subs x) = fromAV x
-fromFT (Atom x) = do
-    i <- newID
-    addNode i $ G.Frontier x
-    return i
+fromFT (Atom x) = atomID x >>= \mi -> case mi of
+    Just i  -> return i
+    Nothing -> do
+        i <- newID
+        addNode i $ G.Frontier x
+        saveAtomID x i
+        return i
 
 
 -- | Convert the given tree to a trivial feature graph.
 -- The result (`conI` and `conC`) will be represented
 -- within the state of the monad.
 fromAV
-    :: (Monad m, Ord i, Ord f, Eq a)
+    :: (Functor m, Monad m, Ord i, Ord f, Ord a)
     => AV i f a -> ConT i f a m ID
 fromAV fs = do
     i  <- newID
@@ -224,6 +231,17 @@ register i j = S.modify $ \st@ConS{..} ->
   where
     addKey x Nothing  = Just $ Set.singleton x
     addKey x (Just s) = Just $ Set.insert x s
+
+
+-- | Rertieve ID for the given atom.
+atomID :: (Functor m, Monad m, Ord a) => a -> ConT i f a m (Maybe ID)
+atomID x = M.lookup x <$> S.gets conA
+
+
+-- | Save info about ID of the given atom.
+saveAtomID :: (Monad m, Ord a) => a -> ID -> ConT i f a m ()
+saveAtomID x i = S.modify $ \st ->
+    st {conA = M.insert x i $ conA st}
 
 
 -- | New identifier.
