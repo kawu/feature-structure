@@ -24,6 +24,10 @@ module NLP.FeatureStructure.Tree
 , fromFN
 , fromFT
 , fromAV
+
+-- * Utility
+, showFN
+, showFT
 ) where
 
 
@@ -32,6 +36,7 @@ import           Control.Monad (forM, forM_)
 import qualified Control.Monad.State.Strict as S
 import           Control.Monad.Identity (Identity, runIdentity)
 
+import           Data.List (intercalate)
 import qualified Data.Set as Set
 import qualified Data.Map.Strict as M
 -- import qualified Data.Traversable as T
@@ -89,6 +94,22 @@ instance (IsString i, IsString a) => IsString (FN i f a) where
 -- -- | If the string is empty, it represents an `empty` tree.
 -- -- If the string starts with '?', it represents a `label`.
 -- -- Otherwise, it represents a `atom`.
+
+
+showFN :: (Show i, Show f, Show a) => FN i f a -> String
+showFN FN{..} =
+    let showIde Nothing = ""
+        -- showIde (Just i) = "(" ++ show i ++ ")"
+        showIde (Just i) = show i
+    in  showIde ide ++ showFT val
+
+
+showFT :: (Show i, Show f, Show a) => FT i f a -> String
+showFT (Atom x) = show x
+showFT (Subs m) =
+    let showFeat (x, fn) = show x ++ "=" ++ showFN fn
+        body = intercalate ", " $ map showFeat $ M.toList m
+    in  "[" ++ body ++ "]"
 
 
 --------------------------------------------------------------------

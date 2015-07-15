@@ -458,18 +458,26 @@ showFlat
     :: (Ord i, Show i, Show f, Show a)
     => Graph i f a -> i -> String
 showFlat g =
-    enclose "[" "]" . doit
+    enclose "[" "]" . flip S.evalState Set.empty . doit
   where
     enclose l r x = l ++ x ++ r
     doit i = case getNode i g of
-        Nothing -> ""
-        Just nd ->
-            "" -- show i ++ "(" ++ show (D.repr i disjSet) ++ ")"
-         ++ ( case nd of
-                Interior m -> intercalate ", "
-                    $ map putFeat $ M.toList m
-                Frontier y -> show y )
-    putFeat (x, j) = show x ++ "=" ++ doit j
+        Nothing -> return "!?"
+        Just nd -> do
+            b <- S.gets $ Set.member i
+            -- let b = False
+            S.modify $ Set.insert i
+            let iStr = enclose "(" ")" (show i)
+            if b
+                then return $ iStr ++ "..."
+                else case nd of
+                    Frontier y -> return $ show y
+                    Interior m -> do
+                        xs <- mapM putFeat $ M.toList m
+                        return $ iStr ++ enclose "[" "]" (intercalate ", " xs)
+    putFeat (x, j) = do
+        y <- doit j
+        return $ show x ++ "=" ++ y
 
 
 -- | Print information about the graph into stdout.  Alternative version.
