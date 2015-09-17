@@ -35,6 +35,7 @@ library
       , SVGFonts                >= 1.5      && < 2.0
       , diagrams-svg            >= 1.3      && < 2.0
       , diagrams-lib            >= 1.3      && < 2.0
+      , tostring                >= 0.2      && < 1.0
 
     exposed-modules:
         NLP.FeatureStructure.Core
@@ -50,6 +51,7 @@ library
         NLP.FeatureStructure.DisjSet
 
     ghc-options: -Wall -O2
+
 
 test-suite test
     default-language:
@@ -71,3 +73,10 @@ test-suite test
 source-repository head
     type: git
     location: https://github.com/kawu/feature-structure.git
+
+
+executable draw-test
+    -- build-depends:
+    hs-source-dirs: tools, src
+    main-is: draw-test.hs
+    ghc-options: -Wall -O2 -threaded -rtsopts

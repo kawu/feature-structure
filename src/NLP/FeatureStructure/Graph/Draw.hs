@@ -26,6 +26,10 @@ import           Graphics.SVGFonts.Text
 import           Graphics.SVGFonts.Fonts (lin2, bit)
 
 
+-- String printing
+import           Data.String.ToString (toString)
+
+
 import           NLP.FeatureStructure.Graph
 
 
@@ -76,20 +80,21 @@ toAVM g =
 
 
 drawAvmId AvmID{..}
-    =   addBounds (pad 1.1 $ textSmall $ show avmID)
+    =   addBounds (pad 1.5 $ textSmall $ show avmID)
     ||| strutX 1
     ||| drawAvm avmPR
 
 
-drawAvm (Leaf x) = text' $ show x
+drawAvm (Leaf x) = text' $ toString x
 drawAvm (Node m)
   = addBounds
   $ frame 1
   $ centerXY
   $ vcat
   $ addPauses
-    [ text' (show attr) ||| text' ":" |||
-      strutX 3   ||| drawAvmId avmId
+    [ text' (toString attr) |||
+      strutX 1 ||| text' ":" |||
+      strutX 3 ||| drawAvmId avmId
     | (attr, avmId) <- M.toList m ]
   where
     addPauses = intersperse $ strutY 1
@@ -104,18 +109,18 @@ addBounds x = x <> boundingRect x
 ----------------------------------------
 
 
-testGraph = Graph $ M.fromList
-    [ (0, Interior $ M.fromList
-        [("X", 1), ("Y", 2), ("Z", 0)])
-    , (1, Interior $ M.fromList
-        [("X", 2), ("Y", 3)])
-    , (2, Frontier "a")
-    , (3, Frontier "b") ]
-
-
-testMain =
-    let testAvm = toAVM testGraph 0
-    in  mainWith (drawAvmId testAvm :: Diagram B)
+-- testGraph = Graph $ M.fromList
+--     [ (0, Interior $ M.fromList
+--         [("X", 1), ("Y", 2), ("Z", 0)])
+--     , (1, Interior $ M.fromList
+--         [("X", 2), ("Y", 3)])
+--     , (2, Frontier "a")
+--     , (3, Frontier "b") ]
+-- 
+-- 
+-- testMain =
+--     let testAvm = toAVM testGraph 0
+--     in  mainWith (drawAvmId testAvm :: Diagram B)
 
 
 ----------------------------------------
@@ -125,13 +130,13 @@ testMain =
 
 -- | Draw the given text with the given size.
 textSize k t = stroke
-    ( textSVG' (TextOpts bit INSIDE_H KERN False undefined k)
+    ( textSVG' (TextOpts lin2 INSIDE_H KERN False undefined k)
     t ) # fillRule EvenOdd # fc black -- # lc blue # bg lightgrey
 
 
 -- | Draw the given text.
-text' = textSize 20
+text' x = textSize 20 x -- # showOrigin
 
 
 -- | Draw a small text.
-textSmall = textSize 5
+textSmall = textSize 8
