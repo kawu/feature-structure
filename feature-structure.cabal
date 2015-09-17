@@ -32,13 +32,16 @@ library
       , monad-memo              >= 0.4      && < 0.5
       , monad-loops             >= 0.4      && < 0.5
       -- , graphviz                >= 2999.16  && < 2999.17
+      , SVGFonts                >= 1.5      && < 2.0
+      , diagrams-svg            >= 1.3      && < 2.0
+      , diagrams-lib            >= 1.3      && < 2.0
 
     exposed-modules:
         NLP.FeatureStructure.Core
       , NLP.FeatureStructure.Tree
       , NLP.FeatureStructure.AVM
       , NLP.FeatureStructure.Graph
-      -- , NLP.FeatureStructure.Graph.Tests
+      , NLP.FeatureStructure.Graph.Draw
       , NLP.FeatureStructure.Join
       , NLP.FeatureStructure.Unify
       , NLP.FeatureStructure.Reid
