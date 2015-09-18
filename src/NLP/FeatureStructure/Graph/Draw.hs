@@ -4,6 +4,8 @@
 {-# LANGUAGE DoAndIfThenElse #-}
 
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TypeFamilies #-}
 
 
 -- | Draw a feature graph using the diagrams framework.
@@ -16,18 +18,19 @@ import qualified Data.Set as S
 import qualified Data.Map.Strict as M
 import qualified Control.Monad.State.Strict as ST
 import           Data.List (intersperse)
+-- import           Data.Typeable (Typeable)
 
 
 import           Diagrams.Prelude
-import           Diagrams.Backend.SVG.CmdLine
+-- import           Diagrams.Backend.SVG.CmdLine
 
 -- Text and fonts
 import           Graphics.SVGFonts.Text
-import           Graphics.SVGFonts.Fonts (lin2, bit)
+import           Graphics.SVGFonts.Fonts (lin2) -- , bit)
 
 
 -- String printing
-import           Data.String.ToString (toString)
+import           Data.String.ToString (toString, ToString)
 
 
 import           NLP.FeatureStructure.Graph
@@ -79,12 +82,21 @@ toAVM g =
 ----------------------------------------
 
 
+drawAvmId
+    :: ( Show i, ToString a, ToString f
+       , Renderable (Path V2 Double) b )
+    => AvmID i f a
+    -> QDiagram b V2 Double Any
 drawAvmId AvmID{..}
     =   addBounds (pad 1.5 $ textSmall $ show avmID)
     ||| strutX 1
     ||| drawAvm avmPR
 
 
+drawAvm
+    :: ( Show i, ToString a, ToString f
+       , Renderable (Path V2 Double) b )
+    => Avm i f a -> QDiagram b V2 Double Any
 drawAvm (Leaf x) = text' $ toString x
 drawAvm (Node m)
   = addBounds
@@ -98,9 +110,13 @@ drawAvm (Node m)
     | (attr, avmId) <- M.toList m ]
   where
     addPauses = intersperse $ strutY 1
-    drawVal = text'
 
 
+addBounds
+    :: ( Monoid a, Semigroup a, TrailLike a
+       , Transformable a, Enveloped a
+       , V a ~ V2)
+    => a -> a
 addBounds x = x <> boundingRect x
 
 
@@ -129,14 +145,26 @@ addBounds x = x <> boundingRect x
 
 
 -- | Draw the given text with the given size.
+textSize
+    :: Renderable (Path V2 Double) b
+    => Double -> String
+    -> QDiagram b V2 Double Any
 textSize k t = stroke
     ( textSVG' (TextOpts lin2 INSIDE_H KERN False undefined k)
     t ) # fillRule EvenOdd # fc black -- # lc blue # bg lightgrey
 
 
 -- | Draw the given text.
+text'
+    :: Renderable (Path V2 Double) b
+    => String
+    -> QDiagram b V2 Double Any
 text' x = textSize 20 x -- # showOrigin
 
 
 -- | Draw a small text.
+textSmall
+    :: Renderable (Path V2 Double) b
+    => String
+    -> QDiagram b V2 Double Any
 textSmall = textSize 8
