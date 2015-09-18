@@ -128,5 +128,4 @@ main :: IO ()
 main = case fromAVM love of
     Nothing -> print "?"
     Just (g, i) -> do
-        let testAvm = D.toAVM g i
-        mainWith (D.drawAvmId testAvm :: Diagram B)
+        mainWith (D.drawNode_ g i :: Diagram B)

@@ -37,6 +37,68 @@ import           NLP.FeatureStructure.Graph
 
 
 ----------------------------------------
+-- Drawing parameters (configuration)
+----------------------------------------
+
+
+-- | Size of feature text.
+featSize :: Double
+featSize = 20.0
+
+
+-- -- | Size of feature value text.
+-- valSize :: Double
+-- valSize = 18.0
+
+
+-- | Size of identifier text.
+idSize :: Double
+idSize = 10.0
+
+
+-- | Tiny space size.
+tinyBreakSize :: Double
+tinyBreakSize = 1 
+
+
+-- | Small space size.
+smallBreakSize :: Double
+smallBreakSize = 3
+
+
+----------------------------------------
+-- Drawing graphs and nodes
+----------------------------------------
+
+
+-- | A "local" diagram monad for drawing graph nodes.
+type Diag i = ST.State (S.Set i)
+
+
+-- | Evaluation of the local diagram monad.
+runDiag :: Diag i b -> b
+runDiag = flip ST.evalState S.empty
+
+
+-- | Draw the particular node of the graph.
+drawNode
+    :: ( Ord i, Ord f, Show i, Renderable (Path V2 Double) b
+       , ToString a, ToString f )
+    => Graph i f a -> i -> Diag i (QDiagram b V2 Double Any)
+drawNode g i = do
+    avmID <- toAVM g i
+    return $ drawAvmId avmID
+
+
+-- | Pure version of the drawNode function.
+drawNode_
+    :: ( Ord i, Ord f, Show i, Renderable (Path V2 Double) b
+       , ToString a, ToString f )
+    => Graph i f a -> i -> QDiagram b V2 Double Any
+drawNode_ g = runDiag . drawNode g
+
+
+----------------------------------------
 -- AVM representation
 ----------------------------------------
 
@@ -57,10 +119,16 @@ data Avm i f a
     deriving (Show, Eq, Ord)
 
 
+-- | (Graph, Root ID) to AVM transformation.  Non-monadic
+-- version.
+toAVM_ :: (Ord i, Ord f) => Graph i f a -> i -> AvmID i f a
+toAVM_ g = runDiag . toAVM g
+
+
 -- | (Graph, Root ID) to AVM transformation.
-toAVM :: (Ord i, Ord f) => Graph i f a -> i -> AvmID i f a
+toAVM :: (Ord i, Ord f) => Graph i f a -> i -> Diag i (AvmID i f a)
 toAVM g =
-    flip ST.evalState S.empty . toAvmID
+    toAvmID
   where
     nodeToAvm (Frontier x) = return $ Leaf x
     nodeToAvm (Interior m) = Node . M.fromList
@@ -82,42 +150,47 @@ toAVM g =
 ----------------------------------------
 
 
+-- | Construct a diagram from an AVM with ID.
 drawAvmId
     :: ( Show i, ToString a, ToString f
        , Renderable (Path V2 Double) b )
     => AvmID i f a
     -> QDiagram b V2 Double Any
 drawAvmId AvmID{..}
-    =   addBounds (pad 1.5 $ textSmall $ show avmID)
+    =   renderID (show avmID)
     ||| strutX 1
     ||| drawAvm avmPR
+  where
+    renderID i = drawText idSize grey i # pad 1.5 --  # fc grey
 
 
+-- | Construct a diagram from an AVM.
 drawAvm
     :: ( Show i, ToString a, ToString f
        , Renderable (Path V2 Double) b )
     => Avm i f a -> QDiagram b V2 Double Any
-drawAvm (Leaf x) = text' $ toString x
+drawAvm (Leaf x) = drawText featSize black $ toString x
 drawAvm (Node m)
-  = addBounds
-  $ frame 1
+  = frame tinyBreakSize
+  $ addBounds
+  $ frame tinyBreakSize
   $ centerXY
-  $ vcat
-  $ addPauses
-    [ text' (toString attr) |||
-      strutX 1 ||| text' ":" |||
-      strutX 3 ||| drawAvmId avmId
+  $ vcat -- vsep (-5)
+--   $ addPauses
+    [ drawText featSize black (toString attr)  |||
+      strutX tinyBreakSize  ||| drawText featSize black ":" |||
+      strutX smallBreakSize ||| drawAvmId avmId
     | (attr, avmId) <- M.toList m ]
-  where
-    addPauses = intersperse $ strutY 1
+--   where
+--     addPauses = intersperse $ strutY tinyBreakSize
 
 
-addBounds
-    :: ( Monoid a, Semigroup a, TrailLike a
-       , Transformable a, Enveloped a
-       , V a ~ V2)
-    => a -> a
-addBounds x = x <> boundingRect x
+-- addBounds
+--     :: ( Monoid a, Semigroup a, TrailLike a
+--        , Transformable a, Enveloped a
+--        , V a ~ V2)
+--     => a -> a
+addBounds x = x <> (boundingRect x # lw ultraThin)
 
 
 ----------------------------------------
@@ -145,26 +218,21 @@ addBounds x = x <> boundingRect x
 
 
 -- | Draw the given text with the given size.
-textSize
+drawText
     :: Renderable (Path V2 Double) b
-    => Double -> String
+    => Double -> Colour Double -> String
     -> QDiagram b V2 Double Any
-textSize k t = stroke
-    ( textSVG' (TextOpts lin2 INSIDE_H KERN False undefined k)
-    t ) # fillRule EvenOdd # fc black -- # lc blue # bg lightgrey
+drawText theSize col theText = id
+    ( textSVG_ (TextOpts lin2 INSIDE_H KERN False undefined theSize)
+    theText ) # fillRule EvenOdd # lw ultraThin # fc col # lc col -- # bg lightgrey
 
 
--- | Draw the given text.
-text'
+-- | Draw the given text with the given size.  Origin in the
+-- center of the text.
+drawText'
     :: Renderable (Path V2 Double) b
-    => String
+    => Double -> Colour Double -> String
     -> QDiagram b V2 Double Any
-text' x = textSize 20 x -- # showOrigin
-
-
--- | Draw a small text.
-textSmall
-    :: Renderable (Path V2 Double) b
-    => String
-    -> QDiagram b V2 Double Any
-textSmall = textSize 8
+drawText' theSize col theText = stroke
+    ( textSVG' (TextOpts lin2 INSIDE_H KERN False undefined theSize)
+    theText ) # fillRule EvenOdd # lw ultraThin # fc col # lc col
