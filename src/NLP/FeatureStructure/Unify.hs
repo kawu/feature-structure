@@ -80,7 +80,12 @@ unify g h is = do
 --------------------------------------------------------------------
 
 
--- | Get frontier nodes of the graph.
+-- | Obtain frontier nodes of the graph and return them in a form
+-- of a map from atomic values to *sets* of identifiers.
+--
+-- Note that in a properly formed feature graph each atomic value
+-- should be assigned a unique node in the graph and thus be
+-- assiged a single identifier.  However, if two graphs 
 getFronts :: (Ord i, Ord a) => Graph i f a -> M.Map a (S.Set i)
 getFronts Graph{..} = M.fromListWith S.union
     [ (x, S.singleton i)
