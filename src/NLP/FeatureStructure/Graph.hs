@@ -277,6 +277,8 @@ compares g h
         case (M.lookup i m1, M.lookup j m2) of
             (Just j', Just i')  -> do
                 -- guard $ i == i' && j == j'
+                -- ERROR !  Trzeba sprawdzić kto (i czy j) sie
+                -- pierwszy pozenil.
                 when (i /= i') (E.left LT)
                 when (j /= j') (E.left GT)
                 return False

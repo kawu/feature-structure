@@ -33,11 +33,13 @@ tests = testGroup "NLP.FeatureStructure.Graph"
     , testCase "testEq1" testEq1
     -- , testCase "testEq2" testEq2
     , testCase "testCmp1" testCmp1
+    , testCase "testAntiSym1" testAntiSym1
     -- , testCase "testSub1" testSub1
     , testProperty "arbitrary graph valid"
         (G.valid . toGraph :: SGraph -> Bool)
     , testProperty "graph equals to itself" eqItself
     , testProperty "size of mapIDs (+1) the same" checkMapIDs
+    , testProperty "comparison is antysymmetric" checkAntiSymm
     , testProperty "transitivity of the comparison" checkTrans
     -- , testProperty "correctness of `fromTwo`" checkTwo
     , testProperty "dummy trimming doesn't remove nodes" checkTrimNo
@@ -117,6 +119,24 @@ testCmp1 = do
         [ (1, mkI [('a', 1)]) ]
 
 
+-- | A concrete example to check that the relation is
+-- antisymmetric.
+testAntiSym1 :: Assertion
+testAntiSym1 = do
+    G.compare' g1 1 g2 1 @?= LT
+    G.compare' g2 1 g1 1 @?= GT
+  where
+    g1 :: G.Graph Int Char ()
+    g1 = mkG
+        [ (1, mkI [('x', 2), ('y', 3), ('z', 2)])
+        , (2, mkI [])
+        , (3, mkI []) ]
+    g2 = mkG
+        [ (1, mkI [('x', 2), ('y', 3), ('z', 3)])
+        , (2, mkI [])
+        , (3, mkI []) ]
+
+
 -- -- | Subsumption test.
 -- testSub1 :: Assertion
 -- testSub1 = do
@@ -166,6 +186,18 @@ checkTrimNo s =
 --     check s f = and
 --         [ isJust $ G.getNode (f i) r
 --         | i <- S.toList $ G.getIDs s ]
+
+
+-- | Check that the comparison is antysymettric.
+checkAntiSymm :: SGraphID -> SGraphID -> Bool
+checkAntiSymm s1 s2 =
+    if G.compare' g1 i1 g2 i2 /= GT &&
+       G.compare' g2 i2 g1 i1 /= GT
+        then G.equal g1 i1 g2 i2
+        else True
+  where
+    (g1, i1) = toGraphID s1
+    (g2, i2) = toGraphID s2
 
 
 -- | Transitivity of the comparison.
