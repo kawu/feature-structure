@@ -217,11 +217,31 @@ equal g i h j = equals g h [(i, j)]
 
 -- | Compare two graphs given nodes which should
 -- correspond to each other.
+-- 
+-- NOTE: Hard to say if we can correctly carry out comparison of
+-- two graphs this way.  In any case, the idea is that we want to
+-- have a total order on graphs (not difficult in itself) which
+-- satisfies the constraint that if two graphs are isomorphic,
+-- then it should be equal (this is more tricky).
+--
+-- What we can propose instead is to "topologically" sort input
+-- graphs and then compare the sets of nodes and edges in the
+-- ordinary way (i.e. by reusing the standard Ord derivations for
+-- sets, pairs etc.).
+--
+-- Moreover, we could keep feature graphs topologically sorted
+-- all the time.  We would have then consider the operations
+-- available on feature graphs (but at the moment there is only
+-- unification) and make sure that they preserve this invariant.
+--
+-- Perhaps, as an optimisation strategy, we could also keep a map
+-- from (multi?) feature graphs to unique identifiers.  This
+-- could potentially speed up computations.
 compares
     :: (Ord i, Ord j, Ord f, Ord a)
     => Graph i f a  -- ^ The first feature graph
     -> Graph j f a  -- ^ The second feature graph
-    -> [(i, j)] -- ^ Nodes from the first and the second graph
+    -> [(i, j)]     -- ^ Nodes from the first and the second graph
                     --   respectively which should correspond to
                     --   each other.
     -> Ordering
