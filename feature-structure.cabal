@@ -66,9 +66,11 @@ test-suite test
     build-depends:
         tasty                   >= 0.10
       , tasty-quickcheck        >= 0.8
+      , tasty-smallcheck        >= 0.8
       , tasty-hunit             >= 0.9
       , HUnit                   >= 1.2
       , QuickCheck              >= 2.6
+      , smallcheck              >= 1.1
 
 source-repository head
     type: git

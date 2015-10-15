@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE RecordWildCards #-}
 
@@ -10,13 +12,15 @@ import qualified Data.Set as S
 import qualified Data.Map.Strict as M 
 import           Data.Maybe (isJust)
 
+import qualified Test.SmallCheck         as SC
+import qualified Test.SmallCheck.Series  as SC
+import qualified Test.Tasty.SmallCheck   as SC
 import qualified Test.QuickCheck         as QC
--- import qualified Test.QuickCheck.Monadic as QC
-import           Test.Tasty              (TestTree, testGroup)
-import           Test.Tasty.QuickCheck   (testProperty)
+import qualified Test.Tasty.QuickCheck   as QC
+import           Test.Tasty              (TestTree, testGroup, localOption)
 import           Test.HUnit              (Assertion, (@?=))
 import           Test.Tasty.HUnit        (testCase)
-
+import           Test.Tasty.SmallCheck (SmallCheckDepth (..))
 
 import qualified NLP.FeatureStructure.Graph as G
 
@@ -28,23 +32,25 @@ import qualified NLP.FeatureStructure.Graph as G
 
 -- | The actual test set.
 tests :: TestTree
-tests = testGroup "NLP.FeatureStructure.Graph"
+tests = opts $ testGroup "NLP.FeatureStructure.Graph"
     [ testCase "testTrim" testTrim
     , testCase "testEq1" testEq1
     -- , testCase "testEq2" testEq2
     , testCase "testCmp1" testCmp1
     , testCase "testAntiSym1" testAntiSym1
     -- , testCase "testSub1" testSub1
-    , testProperty "arbitrary graph valid"
+    , QC.testProperty "arbitrary graph valid"
         (G.valid . toGraph :: SGraph -> Bool)
-    , testProperty "graph equals to itself" eqItself
-    , testProperty "size of mapIDs (+1) the same" checkMapIDs
-    , testProperty "comparison is antysymmetric" checkAntiSymm
-    , testProperty "transitivity of the comparison" checkTrans
-    -- , testProperty "correctness of `fromTwo`" checkTwo
-    , testProperty "dummy trimming doesn't remove nodes" checkTrimNo
-    , testProperty "full trimming remove all nodes" checkTrimAll
-    ]
+    , QC.testProperty "graph equals to itself" eqItself
+    , QC.testProperty "size of mapIDs (+1) the same" checkMapIDs
+    , QC.testProperty "comparison is antysymmetric" checkAntiSymm
+    , SC.testProperty "comparison is antysymmetric (smallcheck)" checkAntiSymm'
+    , QC.testProperty "transitivity of the comparison" checkTrans
+    -- , QC.testProperty "correctness of `fromTwo`" checkTwo
+    , QC.testProperty "dummy trimming doesn't remove nodes" checkTrimNo
+    , QC.testProperty "full trimming remove all nodes" checkTrimAll ]
+  where
+    opts = localOption (SmallCheckDepth 2)
 
 
 --------------------------------------------------------------------
@@ -200,6 +206,21 @@ checkAntiSymm s1 s2 =
     (g2, i2) = toGraphID s2
 
 
+-- | Check that the comparison is antysymettric.
+checkAntiSymm'
+    :: GraphID Int Int Char Char
+    -> GraphID Int Int Char Char
+    -> Bool
+checkAntiSymm' s1 s2 =
+    if G.compare' g1 i1 g2 i2 /= GT &&
+       G.compare' g2 i2 g1 i1 /= GT
+        then G.equal g1 i1 g2 i2
+        else True
+  where
+    (g1, i1) = toGraphID s1
+    (g2, i2) = toGraphID s2
+
+
 -- | Transitivity of the comparison.
 checkTrans :: SGraphID -> SGraphID -> SGraphID -> Bool
 checkTrans s1 s2 s3 =
@@ -213,6 +234,25 @@ checkTrans s1 s2 s3 =
     c12 = G.compare' g1 i1 g2 i2
     c13 = G.compare' g1 i1 g3 i3
     c23 = G.compare' g2 i2 g3 i3
+
+
+-- -- | Transitivity of the comparison.
+-- checkTrans'
+--     :: GraphID Int Int Char Char
+--     -> GraphID Int Int Char Char
+--     -> GraphID Int Int Char Char
+--     -> Bool
+-- checkTrans' s1 s2 s3 =
+--     check c12 c13 c23
+--   where
+--     check LT x LT = x == LT
+--     check _ _ _ = True
+--     (g1, i1) = toGraphID s1
+--     (g2, i2) = toGraphID s2
+--     (g3, i3) = toGraphID s3
+--     c12 = G.compare' g1 i1 g2 i2
+--     c13 = G.compare' g1 i1 g3 i3
+--     c23 = G.compare' g2 i2 g3 i3
 
 
 -- | Size of the result of mapIDs (+1) should not change.
@@ -276,6 +316,11 @@ empty :: Graph i j a b
 empty = Graph S.empty M.empty M.empty
 
 
+--------------------------------------------------------------------
+-- QuickCheck Instances
+--------------------------------------------------------------------
+
+
 -- | Construct an edge based on the given sets of
 -- underlying nodes.
 genEdge
@@ -315,6 +360,33 @@ instance ( Ord i, Ord j, QC.Arbitrary i, QC.Arbitrary j
         i <- QC.elements $ S.toList $ nodes g
         return $ GraphID g i
 
+
+--------------------------------------------------------------------
+-- SmallCheck Instances
+--------------------------------------------------------------------
+
+
+instance Monad m => SC.Serial m (Graph Int Int Char Char) where
+--     series = SC.generate $ \k -> take 10 ( genGraphs
+--         (S.fromList ['a', 'b'])
+--         (S.fromList ['x', 'y']) k )
+    series = SC.generate $ genGraphs
+        (S.fromList ['a', 'b'])
+        (S.fromList ['x', 'y'])
+
+
+instance Monad m => SC.Serial m (GraphID Int Int Char Char) where
+    series = do
+        g <- SC.series
+        i <- choose $ S.toList $ nodes g
+        return $ GraphID g i
+
+
+-- | Choose an element from the input list.
+choose :: Monad m => [a] -> SC.Series m a
+choose = SC.generate . const
+
+
 --------------------------------------------------------------------
 -- Conversion
 --------------------------------------------------------------------
@@ -349,6 +421,108 @@ toGraphID GraphID{..} =
     let g = toGraph graph
         i = Left root
     in  (g, i)
+
+
+--------------------------------------------------------------------
+-- Manual Graph Generation
+--------------------------------------------------------------------
+
+
+-- | Generate recursively all graphs of a given rank.
+genGraphs
+    :: (Ord a, Ord b)
+    => S.Set a  -- ^ The set of features
+    -> S.Set b  -- ^ The set of values
+    -> Int      -- ^ The rank
+    -> [Graph Int Int a b]
+genGraphs featSet atomSet 1 = g0 :
+    [ gs x
+    | x <- S.toList featSet ]
+  where
+    g0 = Graph
+        { nodes  = S.singleton 1
+        , edges  = M.empty
+        , leaves = M.empty }
+    gs x = Graph
+        { nodes  = S.singleton 1
+        , edges  = M.singleton (1, x) (Left 1)
+        , leaves = M.empty }
+genGraphs featSet atomSet n = concat
+    [ addNode n g ++ addLeaf n g
+    | g <- genGraphs
+        featSet atomSet (n - 1) ]
+  where
+
+    -- Find all possible graphs given a new internal node.
+    addLeaf i g = do
+        edges' <- newLeafEdges i g
+        y      <- S.toList atomSet
+        return $ Graph
+            { nodes = nodes g
+            , edges = M.union (edges g) (M.fromList edges')
+            , leaves = M.insert i y (leaves g) }
+
+    -- Generate all sets of possible new ingoing edges leading to
+    -- the leaf with the given ID.
+    newLeafEdges i g = subsets
+        [ [ ((j, x), Right i)
+          | x <- S.toList featSet ]
+        | j <- getInternalNodes g ]
+
+    -- Find all possible graphs given a new internal node.
+    addNode i g = do
+        edges' <- newEdges i g
+        return $ Graph
+            { nodes = S.insert i (nodes g)
+            , edges = M.union (edges g) (M.fromList edges')
+            , leaves = leaves g }
+
+    -- Generate all edge-sets which can be added to the graph
+    -- with the new internal node.
+    newEdges i g = do
+        es1 <- newOutEdges1 i g
+        es2 <- newOutEdges2 i g
+        es3 <- newInEdges   i g
+        return $ es1 ++ es2 ++ es3
+
+    -- Generate all sets of possible new in-going edges.
+    newInEdges i g = subsets
+        [ [ ((j, x), Left i)
+          | x <- S.toList featSet ]
+        | j <- i : getInternalNodes g ]
+
+    -- Generate all sets of possible new out-going edges
+    -- leading to internal nodes.
+    newOutEdges1 i g = subsets
+        [ [ ((i, x), Left j)
+          | x <- S.toList featSet ]
+        | j <- getInternalNodes g ]
+
+    -- Generate all sets of possible new out-going edges
+    -- leading to leaf nodes.
+    newOutEdges2 i g = subsets
+        [ [ ((i, x), Right j)
+          | x <- S.toList featSet ]
+        | j <- getLeafNodes g ]
+
+    -- Retrieve all internal node IDs.
+    getInternalNodes Graph{..} = S.toList nodes
+    -- Retrieve all leaf node IDs.
+    getLeafNodes Graph{..} = M.keys leaves
+        
+    
+    
+-- | Compute possible subsets of the input set of sets taking
+-- into account that elements from one input set cannot be added
+-- to the output together. 
+subsets :: [[a]] -> [[a]]
+subsets (xs:xss) =
+    -- none element from `xs` is added to the result 
+    subsets xss ++ concat
+    -- one of the `xs` elements is added to the result
+    [ map (x:) (subsets xss)
+    | x  <- xs ]
+subsets [] = [[]]
 
 
 --------------------------------------------------------------------
